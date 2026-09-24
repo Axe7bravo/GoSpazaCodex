@@ -1,0 +1,16 @@
+{
+  "name": "@gospaza/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gospaza/contracts": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  }
+}

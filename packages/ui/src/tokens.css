@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light;
+  --gs-cream: #fff9ef;
+  --gs-surface: #ffffff;
+  --gs-ink: #24221f;
+  --gs-muted: #625d55;
+  --gs-orange: #f47721;
+  --gs-green: #187443;
+  --gs-radius: 0.75rem;
+  --gs-space-1: 0.5rem;
+  --gs-space-2: 1rem;
+  --gs-space-3: 1.5rem;
+  --gs-space-4: 2rem;
+  --gs-font: Arial, Helvetica, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--gs-cream); color: var(--gs-ink); font-family: var(--gs-font); line-height: 1.6; }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; letter-spacing: -0.035em; }
+.gs-button { font: inherit; font-weight: 700; color: var(--gs-ink); background: var(--gs-orange); border: 0; border-radius: var(--gs-radius); padding: 0.75rem 1.25rem; cursor: pointer; }
+.gs-button:focus-visible { outline: 3px solid var(--gs-ink); outline-offset: 3px; }
+.gs-button:disabled { opacity: 0.6; cursor: not-allowed; }

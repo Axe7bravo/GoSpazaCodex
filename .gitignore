@@ -7,6 +7,9 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.*.example
+*.tsbuildinfo
+.cache/
 
 .DS_Store
 Thumbs.db

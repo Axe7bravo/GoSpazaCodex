@@ -1,0 +1,11 @@
+{
+  "name": "@gospaza/config",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./env": "./env.cjs",
+    "./typescript/base": "./tsconfig.base.json",
+    "./typescript/next": "./tsconfig.next.json"
+  },
+  "scripts": { "test": "node --test env.test.cjs" }
+}

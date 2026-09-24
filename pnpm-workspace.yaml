@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 10 requires explicit permission for dependency install scripts.
+# Native tooling used by Medusa/SWC, Vite/esbuild and Next/sharp.
+onlyBuiltDependencies:
+  - "@swc/core"
+  - "esbuild"
+  - "sharp"
