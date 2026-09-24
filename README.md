@@ -1,6 +1,6 @@
-# GoSpaza — M0 repository foundation
+# GoSpaza — repository and authentication foundation
 
-GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applications. M0 contains infrastructure and application shells only. Read AGENTS.md before changes; later marketplace milestones are not implemented.
+GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applications. M0 provides infrastructure; M1 adds native authentication and actor-protected shells. See [M1 authentication setup and verification](docs/M1_AUTH.md) before starting the customer app, which now requires a native publishable API key. Read AGENTS.md before changes; later marketplace milestones are not implemented.
 
 ## Repository and decisions
 
@@ -13,7 +13,7 @@ GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applicati
 | apps/admin | Platform admin shell, port 3003 |
 | packages/ui | Shared CSS tokens and Button |
 | packages/contracts | Infrastructure TypeScript contracts |
-| packages/api-client | Typed, validated liveness client; no authentication or business APIs |
+| packages/api-client | Typed liveness and actor-specific native session clients |
 | packages/config | Strict TypeScript, ESLint, environment validation |
 | packages/test-utils | Isolated environment fixture; no business fixtures |
 | scripts | Local environment setup and live HTTP smoke checks |
@@ -33,6 +33,8 @@ All commands below run at the repository root, including on Windows PowerShell. 
 
 ## First-time local setup
 
+The M0 sequence below establishes infrastructure. For an existing M0 checkout, use the ordered M1 commands in [docs/M1_AUTH.md](docs/M1_AUTH.md); no new migration is needed.
+
 For an existing npm installation, follow the migration section below instead. Preserve existing environment files and database volumes.
 
 1. Run `pnpm run env:setup`. It creates root .env, apps/backend/.env and frontend .env.local files from examples, generates independent JWT/cookie secrets and one matching database password, and never prints secrets. If any target exists it stops without overwriting existing configuration. In that case preserve existing files and manually create only missing ones from examples.
@@ -40,8 +42,8 @@ For an existing npm installation, follow the migration section below instead. Pr
 3. Run `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` for the fast checks.
 4. Run `docker compose up -d --wait`. Services are named postgres and redis, with persistent project-scoped volumes and health checks. Published database ports bind only to loopback; Redis has no local password. This Compose file is for local development, not public deployment.
 5. Run `pnpm run db:migrate`. Compose creates the configured database; Medusa applies its native migrations and module links. No seed or admin user is required for M0. This mutates the configured database: use the local development configuration.
-6. Run `pnpm run dev`. It starts all five applications and stops the group if a process exits. Leave this terminal running. In another terminal, run `pnpm run test:smoke`.
-7. Inspect each frontend in a browser at ports 3000–3003. Each must identify its app and show the shared styled, disabled Coming soon button. Check narrow and wide layouts; there are no active business flows.
+6. Configure the customer publishable key using docs/M1_AUTH.md, then run `pnpm run dev`. It starts all five applications and stops the group if a process exits. Leave this terminal running. In another terminal, run `pnpm run test:smoke`.
+7. Inspect each frontend in a browser at ports 3000–3003. Each login page must identify its app. Verify the M1 auth flows described in docs/M1_AUTH.md on narrow and wide layouts.
 8. Stop development with Ctrl+C before `pnpm run build`, to avoid sharing .next output with dev servers. Build compiles all five applications and checks the shared TypeScript packages.
 
 The environment setup command is optional when environment variables are already supplied by the host. It does not install packages or start services. If interrupted while writing files, it will preserve what was written; complete the remaining examples manually. Environment files are ignored by Git. Never put real secrets in example files.
@@ -154,10 +156,10 @@ Supply these settings when building and starting the relevant instance so its Ad
 - GET /health/ready returns HTTP 200 only when PostgreSQL SELECT 1 and Redis PING succeed; otherwise HTTP 503 with sanitized up/down fields. It checks connectivity, not migration version or every Medusa worker. Calls have connection/query timeouts; overlapping requests share a probe and cache its result for one second. Both routes disable HTTP caching.
 - Medusa's native /health remains unchanged; use the explicit routes above for this project's monitoring contract.
 - Every request reaching the custom middleware receives a server-generated X-Request-ID; downstream code can access res.locals.requestId. Completion logs are JSON with timestamp, level, event, request ID, method, status and duration. Bodies, query strings, cookies, auth headers and connection errors are excluded. Medusa's own startup/internal logs retain its default logger. This is a request logging baseline, not full tracing.
-- The typed API client's health operation is ready for server-side use. Cross-origin browser health requests are not enabled in M0. Actor clients and their authentication/CORS policies belong to later milestones.
+- The typed API client's health operation is ready for server-side use. Cross-origin browser health requests are not enabled in M0. M1 actor clients and their session/CORS policies are documented in docs/M1_AUTH.md.
 
 ## CI readiness and verification limits
 
 Once the first install has produced a reviewed, committed lockfile, CI can run pnpm install --frozen-lockfile, lint, typecheck, test and build noninteractively with environment variables supplied. To run test:smoke, provision PostgreSQL/Redis, migrate a disposable database and start the five apps first. No provider-specific CI or deployment workflow is introduced.
 
-The pnpm correction was reviewed statically only; Codex ran no shell commands or verification. User-supplied output showed Medusa's native migrations completed under npm, then link-module initialization/synchronization failed because @medusajs/medusa/link-modules could not resolve (followed by the createPlan error). The overall migration has not succeeded yet. Retry it after a clean pnpm installation; dependency resolution, full migration including link synchronization, lint, typechecks, tests, builds and runtime smoke checks remain unverified under pnpm. There are no authentication flows, merchant models, catalogue screens, checkout, dispatch, payments, compliance, financial features or future-domain fixtures in M0.
+The pnpm correction was reviewed statically only; Codex ran no shell commands or verification. User-supplied output showed Medusa's native migrations completed under npm, then link-module initialization/synchronization failed because @medusajs/medusa/link-modules could not resolve (followed by the createPlan error). The overall migration has not succeeded yet. Retry it after a clean pnpm installation; dependency resolution, full migration including link synchronization, lint, typechecks, tests, builds and runtime smoke checks remain unverified under pnpm. M1 adds authentication only. Merchant/driver business models, catalogue, checkout, dispatch, payments, compliance and finance remain unimplemented.

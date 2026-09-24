@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "tsx --test tests/*.test.ts",
-    "db:migrate": "medusa db:migrate"
+    "db:migrate": "medusa db:migrate",
+    "auth:publishable-key": "medusa exec ./src/scripts/create-auth-publishable-key.ts",
+    "test:integration": "medusa exec ./src/scripts/verify-auth.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

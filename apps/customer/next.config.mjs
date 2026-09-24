@@ -1,6 +1,6 @@
 import { frontendEnv } from "@gospaza/config/env";
 
-frontendEnv(process.env);
+frontendEnv(process.env, true);
 
 /** @type {import('next').NextConfig} */
 const config = {

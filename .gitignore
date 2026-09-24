@@ -17,3 +17,6 @@ Thumbs.db
 *.log
 
 .medusa/
+
+playwright-report/
+test-results/

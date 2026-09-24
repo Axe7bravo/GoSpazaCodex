@@ -19,3 +19,14 @@ h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; letter-spacing: -0.0
 .gs-button { font: inherit; font-weight: 700; color: var(--gs-ink); background: var(--gs-orange); border: 0; border-radius: var(--gs-radius); padding: 0.75rem 1.25rem; cursor: pointer; }
 .gs-button:focus-visible { outline: 3px solid var(--gs-ink); outline-offset: 3px; }
 .gs-button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.auth-card { width: 100%; max-width: 32rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); background: var(--gs-surface); border: 1px solid #e5dfd5; border-radius: var(--gs-radius); }
+.auth-card h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); }
+.auth-card form { display: grid; gap: var(--gs-space-1); }
+.auth-card label { font-weight: 700; margin-top: var(--gs-space-2); }
+.auth-card input { width: 100%; min-height: 3rem; border: 1px solid #938c81; border-radius: 0.5rem; padding: 0.75rem; font: inherit; }
+.auth-card input:focus-visible { outline: 3px solid var(--gs-orange); outline-offset: 2px; }
+.auth-card a { color: var(--gs-ink); text-underline-offset: 0.2em; }
+.auth-card .gs-button { margin-top: var(--gs-space-2); }
+.auth-error { color: #a11e16; }
+.auth-note { color: var(--gs-muted); }

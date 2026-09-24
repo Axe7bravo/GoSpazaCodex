@@ -1,12 +1,9 @@
-import { Button } from "@gospaza/ui";
-
+"use client";
+import { SessionBoundary } from "@gospaza/ui/auth";
+import { authClient } from "./auth-client";
 export default function Page() {
-  return (
-    <main>
-      <p className="brand">GoSpaza</p>
-      <h1>Driver app</h1>
-      <p>This application is being prepared.</p>
-      <Button disabled>Coming soon</Button>
-    </main>
-  );
+  return <main className="auth-layout driver"><SessionBoundary client={authClient} title="Driver portal">
+    {() => <p>You are signed in. Operational features are not available yet.</p>}
+  </SessionBoundary></main>;
 }
+

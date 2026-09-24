@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
+import { AUTH_METHODS } from "./src/lib/auth-config";
 import { backendEnv } from "@gospaza/config/env";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
@@ -10,7 +11,9 @@ module.exports = defineConfig({
     workerMode: env.workerMode,
     databaseUrl: env.databaseUrl,
     redisUrl: env.redisUrl,
+    cookieOptions: { httpOnly: true, sameSite: "lax", secure: ["staging", "production"].includes(env.appEnv) },
     http: {
+      authMethodsPerActor: AUTH_METHODS,
       storeCors: env.storeCors,
       adminCors: env.adminCors,
       authCors: env.authCors,

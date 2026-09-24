@@ -14,7 +14,8 @@
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test",
     "build": "pnpm -r --workspace-concurrency=1 --if-present run build",
     "db:migrate": "pnpm --filter @gospaza/backend run db:migrate",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
@@ -25,7 +26,8 @@
     "globals": "^16.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.46.0"
+    "typescript-eslint": "^8.46.0",
+    "@playwright/test": "^1.56.0"
   },
   "packageManager": "pnpm@10.11.1"
 }

@@ -1,12 +1,9 @@
-import { Button } from "@gospaza/ui";
-
+"use client";
+import { SessionBoundary } from "@gospaza/ui/auth";
+import { authClient } from "./auth-client";
 export default function Page() {
-  return (
-    <main>
-      <p className="brand">GoSpaza</p>
-      <h1>Merchant and picker portal</h1>
-      <p>This application is being prepared.</p>
-      <Button disabled>Coming soon</Button>
-    </main>
-  );
+  return <main className="auth-layout merchant"><SessionBoundary client={authClient} title="Merchant and picker portal">
+    {() => <p>You are signed in. Operational features are not available yet.</p>}
+  </SessionBoundary></main>;
 }
+

@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-/** No ambient cookies or actor credentials. Authentication is intentionally not implemented in M0. */
+/** Health requests omit credentials. Use the actor-specific clients for authentication. */
 export function createApiClient(baseUrl: string, fetcher: typeof fetch = fetch) {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) {
@@ -29,3 +29,6 @@ export function createApiClient(baseUrl: string, fetcher: typeof fetch = fetch) 
     },
   };
 }
+
+export { AuthError, createAuthClient, createCustomerAuthClient, validateCredentials } from "./auth";
+export type { AuthClient, CustomerAuthClient } from "./auth";

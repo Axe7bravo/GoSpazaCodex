@@ -31,12 +31,13 @@ function appEnvironment(env) {
   return value;
 }
 
-function frontendEnv(env) {
+function frontendEnv(env, customer = false) {
   const appEnv = appEnvironment(env);
   const apiUrl = url(env, 'NEXT_PUBLIC_API_URL', ['http:', 'https:']);
   if (['staging', 'production'].includes(appEnv) && !apiUrl.startsWith('https:')) {
     throw new Error('NEXT_PUBLIC_API_URL must use HTTPS outside local environments');
   }
+  if (customer) required(env, "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY");
   return { appEnv, apiUrl };
 }
 

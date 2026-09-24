@@ -19,10 +19,10 @@ for (const [app, port, title] of [
   ["admin", 3003, "Platform admin portal"],
 ]) {
   const url = process.env["SMOKE_" + app.toUpperCase() + "_URL"] || "http://localhost:" + port;
-  const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  const response = await fetch(new URL("/login", url), { signal: AbortSignal.timeout(60000) });
   assert.equal(response.status, 200, app);
   const html = await response.text();
-  assert.ok(html.includes(title), app + " title missing");
-  assert.ok(html.includes("gs-button"), app + " shared component missing");
+  assert.ok(html.includes(title.replace(" app", "").replace(" portal", "")), app + " title missing");
+  assert.ok(html.includes("Checking your session"), app + " session-loading shell missing");
 }
-console.log("M0 smoke passed: backend liveness/readiness and all four application shells.");
+console.log("M1 smoke passed: backend liveness/readiness and all four login shells.");

@@ -11,3 +11,9 @@ test('frontend validates required settings', () => {
   assert.throws(() => frontendEnv({ APP_ENV: 'staging', NODE_ENV: 'development', NEXT_PUBLIC_API_URL: 'https://api.example.com' }), /NODE_ENV/);
   assert.throws(() => frontendEnv({ APP_ENV: 'production', NODE_ENV: 'production', NEXT_PUBLIC_API_URL: 'http://api.example.com' }), /HTTPS/);
 });
+
+test('customer requires its native Store API publishable key', () => {
+  const env = { APP_ENV: 'development', NEXT_PUBLIC_API_URL: 'http://localhost:9000' };
+  assert.throws(() => frontendEnv(env, true), /NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY/);
+  assert.doesNotThrow(() => frontendEnv({ ...env, NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: 'pk_test_fixture' }, true));
+});

@@ -9,7 +9,7 @@ function backendTestEnv() {
     COOKIE_SECRET: "test-only-cookie-secret-000000000000000",
     STORE_CORS: "http://localhost:3000",
     ADMIN_CORS: "http://localhost:3003",
-    AUTH_CORS: "http://localhost:3000,http://localhost:3003",
+    AUTH_CORS: "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003",
   };
 }
 
