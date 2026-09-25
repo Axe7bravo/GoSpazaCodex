@@ -8,7 +8,7 @@
   },
   "scripts": {
     "env:setup": "node scripts/setup-env.mjs",
-    "dev": "concurrently --kill-others --names backend,customer,merchant,driver,admin \"pnpm --filter @gospaza/backend run dev\" \"pnpm --filter @gospaza/customer run dev\" \"pnpm --filter @gospaza/merchant run dev\" \"pnpm --filter @gospaza/driver run dev\" \"pnpm --filter @gospaza/admin run dev\"",
+    "dev": "node scripts/dev-supervisor.mjs",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "pnpm -r --workspace-concurrency=1 --if-present run typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test",
@@ -20,7 +20,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "@types/node": "^22.0.0",
-    "concurrently": "^9.2.0",
     "eslint": "^9.39.0",
     "eslint-config-next": "16.3.6",
     "globals": "^16.0.0",

@@ -1,5 +1,7 @@
 # M1 — Authentication and actor foundations
 
+Historical M1 scope: M2 now allows merchant applicant registration and application-only access without operational merchant provisioning. See [M2 applications](M2_APPLICATIONS.md) for the current journey, storage and migration requirements.
+
 ## Medusa ownership decisions
 
 Medusa 2.18.0 remains pinned. Inspected native authenticate middleware, EmailPass provider, auth/session routes, customer-account workflow, customer/user modules, publishable keys and Redis session loader. Native/configuration patterns suffice: no custom password store, JWT service, actor table, business entity, module link or migration was introduced.

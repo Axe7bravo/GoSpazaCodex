@@ -14,6 +14,8 @@ async function mockAuth(page: Page, actor: string, scenario: "success" | "invali
       "access-control-allow-methods": "GET,POST,DELETE,OPTIONS" };
     if (request.method() === "OPTIONS") { await route.fulfill({ status: 204, headers }); return; }
     const reply = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/merchant/applicant/me") { await reply(active ? { applicant: scenario !== "wrong" } : {}, active ? 200 : 401); return; }
+    if (path === "/merchant/applications/me") { await reply({ application: null, documents: [] }); return; }
     if (path.includes("/emailpass")) {
       if (scenario === "unavailable") { await route.abort(); return; }
       if (scenario === "invalid") { await reply({}, 401); return; }

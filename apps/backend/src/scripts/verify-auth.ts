@@ -47,7 +47,7 @@ export default async function verifyAuth({ container }: ExecArgs) {
   const failures: unknown[] = [];
   try {
     for (const path of Object.values(paths)) assert.equal((await call(path)).status, 401, "anonymous rejected");
-    for (const actor of ["merchant", "driver", "user"]) {
+    for (const actor of ["driver", "user"]) {
       assert.equal((await call("/auth/" + actor + "/emailpass/register", { method: "POST", body: { email: prefix + "@example.test", password } })).status, 403);
     }
     const accounts = new Map<Actor, { email: string; id: string }>();

@@ -2,15 +2,15 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { AuthError, validateCredentials } from "@gospaza/api-client";
-import type { AuthClient, CustomerAuthClient } from "@gospaza/api-client";
-import type { ActorIdentity, CustomerAccount } from "@gospaza/contracts";
+import type { ApplicantAuthClient, AuthClient, CustomerAuthClient } from "@gospaza/api-client";
+import type { ActorIdentity, ApplicantIdentity, CustomerAccount } from "@gospaza/contracts";
 import { Button } from "./index";
 
 function message(error: unknown) {
   return error instanceof AuthError ? error.message : "We cannot complete this request right now. Please try again.";
 }
 export function AuthForm({ client, title, destination, registration = false, registerHref, note }: {
-  client: AuthClient | CustomerAuthClient; title: string; destination: string;
+  client: AuthClient | CustomerAuthClient | ApplicantAuthClient; title: string; destination: string;
   registration?: boolean; registerHref?: string; note?: string;
 }) {
   const [email, setEmail] = useState("");
@@ -62,10 +62,10 @@ export function AuthForm({ client, title, destination, registration = false, reg
 }
 
 export function SessionBoundary({ client, title, children }: {
-  client: AuthClient | CustomerAuthClient; title: string;
-  children: (identity: ActorIdentity, customer: CustomerAccount | null) => ReactNode;
+  client: AuthClient | CustomerAuthClient | ApplicantAuthClient; title: string;
+  children: (identity: ActorIdentity | ApplicantIdentity, customer: CustomerAccount | null) => ReactNode;
 }) {
-  const [session, setSession] = useState<{ identity: ActorIdentity; customer: CustomerAccount | null } | null>(null);
+  const [session, setSession] = useState<{ identity: ActorIdentity | ApplicantIdentity; customer: CustomerAccount | null } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -73,13 +73,14 @@ export function SessionBoundary({ client, title, children }: {
     let revision = 0;
     async function check() {
       const current = ++revision;
-      setSession(null); setError("");
+      setError("");
       try {
         const identity = await client.me();
         const customer = "account" in client ? await client.account() : null;
         if (active && current === revision) setSession({ identity, customer });
       } catch (error) {
         if (!active || current !== revision) return;
+        setSession(null);
         if (error instanceof AuthError && error.kind === "unauthorized") window.location.replace("/login");
         else setError(message(error));
       }

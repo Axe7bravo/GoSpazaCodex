@@ -4,3 +4,26 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 
 .auth-layout { min-height: 100svh; display: grid; align-items: center; padding: clamp(1rem, 5vw, 4rem); }
 .auth-layout .auth-card { max-width: 38rem; }
+
+.application-layout { padding: clamp(1rem, 4vw, 3rem); align-items: start; }
+.application-layout .auth-card { width: min(100%, 72rem); max-width: 72rem; }
+.application-content { margin-block: 1.5rem; }
+.application-content section { border-top: 1px solid #d8d0c3; margin-block: 2rem; padding-top: 1.5rem; }
+.application-content fieldset { border: 1px solid #d8d0c3; border-radius: .75rem; padding: 1rem; margin-block: 1rem; }
+.application-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.application-content label { display: flex; flex-direction: column; gap: .4rem; }
+.application-content input, .application-content textarea, .application-content select { padding: .75rem; border: 1px solid #8b857d; border-radius: .5rem; background: #fffdf8; color: #24211d; width: 100%; font: inherit; }
+.application-content input:disabled, .application-content textarea:disabled { color: #47413a; opacity: 1; background: #f0ece4; }
+.application-content .checkbox { flex-direction: row; align-items: center; }
+.application-content .checkbox input { width: auto; }
+.application-content .wide { grid-column: 1 / -1; }
+.application-content li { margin-block: 1rem; overflow-wrap: anywhere; }
+.application-content button { margin: .4rem .5rem .4rem 0; }
+.application-status { font-weight: 700; }
+.review-filters { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
+.table-scroll { overflow-x: auto; }
+.application-content table { width: 100%; border-collapse: collapse; text-align: left; }
+.application-content th, .application-content td { padding: 1rem; border-bottom: 1px solid #d8d0c3; }
+.application-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.application-summary dt { font-weight: 700; } .application-summary dd { margin: .4rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .application-fields, .application-summary { grid-template-columns: 1fr; } .application-layout { padding: .75rem; } }

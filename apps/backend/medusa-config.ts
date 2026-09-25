@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { AUTH_METHODS } from "./src/lib/auth-config";
+import { privateFileConfig } from "./src/lib/private-file-config";
 import { backendEnv } from "@gospaza/config/env";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
@@ -22,6 +23,8 @@ module.exports = defineConfig({
     },
   },
   modules: [
+    { resolve: "./src/modules/marketplace" },
+    privateFileConfig(process.env),
     { resolve: "@medusajs/medusa/event-bus-redis", options: { redisUrl: env.redisUrl } },
     { resolve: "@medusajs/medusa/workflow-engine-redis", options: { redis: { redisUrl: env.redisUrl } } },
     {

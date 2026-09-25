@@ -1,4 +1,4 @@
-import type { ActorType, ActorIdentity, CustomerAccount } from "@gospaza/contracts";
+import type { ActorType, ActorIdentity, ApplicantIdentity, CustomerAccount } from "@gospaza/contracts";
 
 const identityPaths: Record<ActorType, string> = {
   customer: "/store/gospaza/me", merchant: "/merchant/me", driver: "/driver/me", user: "/admin/gospaza/me",
@@ -18,11 +18,18 @@ export function validateCredentials(email: string, password: string, registratio
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
 }
-export interface AuthClient {
+export interface AuthClient<Identity = ActorIdentity> {
   readonly actor: ActorType;
-  me(): Promise<ActorIdentity>;
-  login(email: string, password: string): Promise<ActorIdentity>;
+  me(): Promise<Identity>;
+  login(email: string, password: string): Promise<Identity>;
   logout(): Promise<void>;
+}
+export interface ApplicantAuthClient extends AuthClient<ApplicantIdentity> {
+  register(email: string, password: string): Promise<ApplicantIdentity>;
+}
+export function createApplicantAuthClient(options: { baseUrl: string; fetcher?: typeof fetch }): ApplicantAuthClient {
+  const client = buildClient("merchant", options, true);
+  return { actor: client.actor, me: client.me, login: client.login, logout: client.logout, register: client.registerApplicant };
 }
 export interface CustomerAuthClient extends AuthClient {
   register(email: string, password: string): Promise<CustomerAccount>;
@@ -36,7 +43,8 @@ export function createCustomerAuthClient(options: { baseUrl: string; publishable
   return buildClient("customer", options);
 }
 
-function buildClient(actor: ActorType, { baseUrl, publishableKey, fetcher = fetch }: { baseUrl: string; publishableKey?: string; fetcher?: typeof fetch }) {
+type SessionIdentity<Applicant extends boolean> = Applicant extends true ? ApplicantIdentity : ActorIdentity;
+function buildClient<Applicant extends boolean = false>(actor: ActorType, { baseUrl, publishableKey, fetcher = fetch }: { baseUrl: string; publishableKey?: string; fetcher?: typeof fetch }, applicant: Applicant = false as Applicant) {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new AuthError("configuration", "Invalid API configuration.");
 
@@ -78,12 +86,16 @@ function buildClient(actor: ActorType, { baseUrl, publishableKey, fetcher = fetc
       throw error;
     }
   }
-  async function me(): Promise<ActorIdentity> {
-    const data = await request(identityPaths[actor]);
+  async function me(): Promise<SessionIdentity<Applicant>> {
+    const data = await request(applicant ? "/merchant/applicant/me" : identityPaths[actor]);
+    if (applicant) {
+      if (!record(data) || data.applicant !== true) throw new AuthError("unauthorized", "Applicant session required.");
+      return { type: "merchant", scope: "application" } as SessionIdentity<Applicant>;
+    }
     if (!record(data) || !record(data.actor) || data.actor.type !== actor || typeof data.actor.id !== "string" || !data.actor.id) {
       throw new AuthError("unauthorized", "This session cannot access this application.");
     }
-    return { type: actor, id: data.actor.id };
+    return { type: actor, id: data.actor.id } as SessionIdentity<Applicant>;
   }
   async function logout() {
     try { await request("/auth/session", "DELETE"); }
@@ -102,6 +114,7 @@ function buildClient(actor: ActorType, { baseUrl, publishableKey, fetcher = fetc
         await logout();
         throw new AuthError("unprovisioned", actor === "customer"
           ? "Finish creating your customer account using Register."
+          : applicant ? "This session cannot access merchant applications. Sign in again."
           : "This account is not provisioned for this application. Contact your administrator.");
       }
       throw error;
@@ -140,5 +153,18 @@ function buildClient(actor: ActorType, { baseUrl, publishableKey, fetcher = fetc
     await login(email, password);
     return account();
   }
-  return { actor, me, login, logout, register, account };
+  async function registerApplicant(email: string, password: string): Promise<SessionIdentity<Applicant>> {
+    const invalid = validateCredentials(email, password, true);
+    if (invalid) throw new AuthError("validation", invalid);
+    if (!applicant || actor !== "merchant") throw new AuthError("configuration", "Applicant client required.");
+    try {
+      const token = tokenFrom(await request("/auth/merchant/emailpass/register", "POST", { email: email.trim(), password }, undefined, true));
+      await request("/auth/session", "POST", undefined, token);
+      return me();
+    } catch (error) {
+      if (error instanceof AuthError && error.status === 401) return login(email, password);
+      throw error;
+    }
+  }
+  return { actor, me, login, logout, register, account, registerApplicant };
 }

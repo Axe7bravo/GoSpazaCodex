@@ -4,6 +4,6 @@ import { authClient } from "../auth-client";
 
 export default function Login() {
   return <main className="auth-layout merchant"><AuthForm client={authClient} title="Merchant and picker sign in"
-    destination="/" note="Sign in with an account provisioned for this application." /></main>;
+    destination="/" registerHref="/apply" note="Sign in to start or continue your merchant application." /></main>;
 }
 

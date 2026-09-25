@@ -4,7 +4,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { validateEmailPass } from "../src/lib/auth-rate-limit";
 import { AUTH_METHODS } from "../src/lib/auth-config";
 import { requireActor, actorIdentity } from "../src/lib/auth-policy";
-import { authOrigin, customerRegistrationOnly } from "../src/lib/auth-http";
+import { authOrigin, publicRegistrationActors } from "../src/lib/auth-http";
 
 test("all four actors explicitly use only EmailPass", () => {
   assert.deepEqual(AUTH_METHODS, { customer: ["emailpass"], user: ["emailpass"], merchant: ["emailpass"], driver: ["emailpass"] });
@@ -37,11 +37,11 @@ test("identity DTO uses an allowlist and never returns auth metadata", async () 
   await actorIdentity("merchant")(req, res);
   assert.deepEqual(body, { actor: { type: "merchant", id: "fixture_merchant" } });
 });
-test("registration is customer-only and browser mutations reject untrusted origins", () => {
-  for (const actor of ["user", "merchant", "driver"]) {
+test("registration excludes platform users and drivers and browser mutations reject untrusted origins", () => {
+  for (const actor of ["user", "driver"]) {
     let status = 0;
     const res = { status(value: number) { status = value; return this; }, json() {} } as unknown as MedusaResponse;
-    customerRegistrationOnly({ params: { actor_type: actor } } as unknown as MedusaRequest, res, () => assert.fail("allowed registration"));
+    publicRegistrationActors({ params: { actor_type: actor } } as unknown as MedusaRequest, res, () => assert.fail("allowed registration"));
     assert.equal(status, 403);
   }
   let status = 0;

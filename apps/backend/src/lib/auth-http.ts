@@ -21,7 +21,7 @@ export function actorCors(req: MedusaRequest, res: MedusaResponse, next: MedusaN
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     res.status(204).end();
     return;
@@ -43,8 +43,8 @@ export function authOrigin(req: MedusaRequest, res: MedusaResponse, next: Medusa
   next();
 }
 
-export function customerRegistrationOnly(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
-  if (req.params.actor_type !== "customer") {
+export function publicRegistrationActors(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  if (!["customer", "merchant"].includes(req.params.actor_type ?? "")) {
     res.status(403).json({ message: "Public registration is not available for this actor." });
     return;
   }
