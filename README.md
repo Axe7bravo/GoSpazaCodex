@@ -1,6 +1,6 @@
-# GoSpaza — repository and authentication foundation
+# GoSpaza — merchant application foundation
 
-GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applications. M0 provides infrastructure; M1 adds native authentication and actor-protected shells. See [M1 authentication setup and verification](docs/M1_AUTH.md) before starting the customer app, which now requires a native publishable API key. Read AGENTS.md before changes; later marketplace milestones are not implemented.
+GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applications. M0 provides infrastructure; M1 adds native authentication and actor-protected shells. See [M1 authentication setup and verification](docs/M1_AUTH.md) before starting the customer app, which now requires a native publishable API key. M2 adds applicant registration, private application documents and read-only admin review. See [M2 setup and verification](docs/M2_APPLICATIONS.md). Read AGENTS.md before changes; M3 approval/provisioning is not implemented.
 
 ## Repository and decisions
 
@@ -18,7 +18,7 @@ GoSpaza uses a modular Medusa v2 monolith and four independent Next.js applicati
 | packages/test-utils | Isolated environment fixture; no business fixtures |
 | scripts | Local environment setup and live HTTP smoke checks |
 
-pnpm workspaces preserve apps/* and packages/* without adding a task runner. The root packageManager pins pnpm 10.11.1, workspace membership is defined in pnpm-workspace.yaml, and internal dependencies use workspace:* so they must resolve locally. Root .npmrc uses the four public-hoist-pattern entries from [Medusa's documented pnpm monorepo configuration](https://docs.medusajs.com/learn/configurations/pnpm). The temporary root tsconfig-paths workaround has been removed: no project source or script directly consumes it; dependencies that use it must resolve their own declared dependency. Medusa package versions are unchanged. pnpm 10's onlyBuiltDependencies allows install scripts for @swc/core, esbuild and sharp, which provide native build tooling; unexpected ignored-build warnings should be reviewed before proceeding. Frontend shared TypeScript packages are consumed as source through Next transpilePackages; their build scripts validate types rather than emit separate bundles. Configuration and test fixtures use CommonJS so Medusa's compiled server can consume them without compiling external source files. Keep the workspace packages available when running the built backend. The Medusa embedded Admin is enabled by default and can be disabled with DISABLE_MEDUSA_ADMIN=true; apps/admin remains a separate placeholder for the future platform portal. Medusa's native commerce modules and migrations remain authoritative; no custom models or schema have been added.
+pnpm workspaces preserve apps/* and packages/* without adding a task runner. The root packageManager pins pnpm 10.11.1, workspace membership is defined in pnpm-workspace.yaml, and internal dependencies use workspace:* so they must resolve locally. Root .npmrc uses the four public-hoist-pattern entries from [Medusa's documented pnpm monorepo configuration](https://docs.medusajs.com/learn/configurations/pnpm). The temporary root tsconfig-paths workaround has been removed: no project source or script directly consumes it; dependencies that use it must resolve their own declared dependency. Medusa package versions are unchanged. pnpm 10's onlyBuiltDependencies allows install scripts for @swc/core, esbuild and sharp, which provide native build tooling; unexpected ignored-build warnings should be reviewed before proceeding. Frontend shared TypeScript packages are consumed as source through Next transpilePackages; their build scripts validate types rather than emit separate bundles. Configuration and test fixtures use CommonJS so Medusa's compiled server can consume them without compiling external source files. Keep the workspace packages available when running the built backend. The Medusa embedded Admin is enabled by default and can be disabled with DISABLE_MEDUSA_ADMIN=true; apps/admin provides authenticated, read-only application review. Medusa's native commerce modules remain authoritative; the M2 marketplace module adds only application and private-document metadata tables.
 
 The Medusa package family is aligned at 2.18.0 from the [official starter](https://github.com/medusajs/medusa-starter-default). Redis event bus, workflow engine and locking use the [official infrastructure configuration](https://docs.medusajs.com/learn/deployment/general). Next.js uses the App Router and [manual installation structure](https://nextjs.org/docs/app/getting-started/installation).
 
@@ -33,7 +33,7 @@ All commands below run at the repository root, including on Windows PowerShell. 
 
 ## First-time local setup
 
-The M0 sequence below establishes infrastructure. For an existing M0 checkout, use the ordered M1 commands in [docs/M1_AUTH.md](docs/M1_AUTH.md); no new migration is needed.
+The M0 sequence below establishes infrastructure. For an existing checkout, use the ordered M2 commands in [docs/M2_APPLICATIONS.md](docs/M2_APPLICATIONS.md); M2 includes a new marketplace migration.
 
 For an existing npm installation, follow the migration section below instead. Preserve existing environment files and database volumes.
 
@@ -42,7 +42,7 @@ For an existing npm installation, follow the migration section below instead. Pr
 3. Run `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` for the fast checks.
 4. Run `docker compose up -d --wait`. Services are named postgres and redis, with persistent project-scoped volumes and health checks. Published database ports bind only to loopback; Redis has no local password. This Compose file is for local development, not public deployment.
 5. Run `pnpm run db:migrate`. Compose creates the configured database; Medusa applies its native migrations and module links. No seed or admin user is required for M0. This mutates the configured database: use the local development configuration.
-6. Configure the customer publishable key using docs/M1_AUTH.md, then run `pnpm run dev`. It starts all five applications and stops the group if a process exits. Leave this terminal running. In another terminal, run `pnpm run test:smoke`.
+6. Configure the customer publishable key using docs/M1_AUTH.md, then run `node scripts/dev-supervisor.mjs` (or root `pnpm run dev`). It supervises all five applications; see the development process lifecycle section for shutdown and verification. Leave this terminal running. In another terminal, run `pnpm run test:smoke`.
 7. Inspect each frontend in a browser at ports 3000–3003. Each login page must identify its app. Verify the M1 auth flows described in docs/M1_AUTH.md on narrow and wide layouts.
 8. Stop development with Ctrl+C before `pnpm run build`, to avoid sharing .next output with dev servers. Build compiles all five applications and checks the shared TypeScript packages.
 
@@ -94,6 +94,75 @@ Stop running application processes first. Keep the existing .env files and Postg
 7. Stop development with Ctrl+C, then run `pnpm run build`. Expected: every application builds and shared package checks pass. Stop on failure.
 
 No pnpm lockfile was generated by Codex, and the existing npm lockfile and installed dependencies are deliberately left for the cleanup above.
+
+## Development process lifecycle
+
+Root `dev` now runs `node scripts/dev-supervisor.mjs`. The supervisor keeps the existing five workspace dev scripts and invokes pnpm's JavaScript entry directly, without launching pnpm.cmd for each app. No production start scripts or Medusa server/worker settings change.
+
+For Windows PowerShell, start the supervisor directly from the repository root:
+
+```powershell
+node scripts/dev-supervisor.mjs
+```
+
+This is the same entry point as root dev and avoids an outer package-manager batch shim. `pnpm run dev` also invokes the supervisor, but if your pnpm installation is reached through pnpm.cmd, that outer batch process belongs to the caller and can still produce its own batch prompt. Direct Node startup removes that wrapper; no prompt suppression or terminal auto-reply is used.
+
+Hierarchy: terminal → supervisor → five isolated Node launchers → pnpm running each unchanged workspace dev script → Medusa/Next and their children. Logs are prefixed with backend/customer/merchant/driver/admin. Startup prints the supervisor, launcher and pnpm PIDs.
+
+Press Ctrl+C in the startup terminal and wait for the supervisor's final message. SIGINT and supported SIGTERM enter one idempotent shutdown path; repeated signals do not launch cleanup twice. An unexpected dev-script/launcher exit shuts down the other applications and produces a nonzero exit status.
+
+On Windows each launcher starts detached from the controlling console. The supervisor explicitly runs taskkill /PID <launcher-pid> /T /F for every application tree and observes launcher/output closure. This is forced development-process termination, not graceful production shutdown. On non-Windows systems each launcher is a process-group leader: shutdown sends SIGTERM to the whole group, allows four seconds, then sends SIGKILL to any remaining group. Cleanup waits are bounded; errors/timeouts are reported rather than claimed as successful. IPC disconnection also triggers a launcher-side cleanup attempt if the supervisor disappears.
+
+Keep the terminal open until shutdown completes. OS-level forced termination and applications that deliberately detach into unrelated groups are outside the normal signal lifecycle. PostgreSQL/Redis are not children of this supervisor and remain running.
+
+### Windows lifecycle verification
+
+Run each command as a single line. Existing app environment, dependencies and infrastructure must already be available. No commands below were executed by Codex.
+
+1. In terminal A, run `node scripts/dev-supervisor.mjs`. Expect five prefixed startup streams and normal app readiness. Stop if an app fails.
+2. In terminal B, capture the supervisor and current descendant identities, entering the printed supervisor PID:
+
+```powershell
+$goSpazaSupervisorPid = [int](Read-Host 'Supervisor PID printed at startup'); $goSpazaSnapshot = @(Get-CimInstance Win32_Process); $goSpazaDevPids = @($goSpazaSupervisorPid); do { $goSpazaPreviousCount = $goSpazaDevPids.Count; $goSpazaDevPids = @($goSpazaDevPids + @($goSpazaSnapshot | Where-Object { $_.ParentProcessId -in $goSpazaDevPids } | Select-Object -ExpandProperty ProcessId) | Sort-Object -Unique) } while ($goSpazaDevPids.Count -gt $goSpazaPreviousCount); $goSpazaTracked = @($goSpazaSnapshot | Where-Object { $_.ProcessId -in $goSpazaDevPids }); $goSpazaTracked | Select-Object ProcessId, ParentProcessId, Name, CommandLine
+```
+
+Expect the supervisor, five launchers, pnpm/script wrappers and dev processes. Capture after all apps start. This tracks descendants even when their command lines do not contain the repository name.
+
+3. Press Ctrl+C in terminal A. Expect a single shutdown announcement, then Development trees stopped and the prompt returning. Repeated Ctrl+C should not duplicate cleanup. In terminal A, inspect the exit status:
+
+```powershell
+$LASTEXITCODE
+```
+
+Expected: 0 for normal shutdown. Stop on errors.
+
+4. In terminal B, check the recorded process identities, including Node and wrappers (creation time excludes recycled PIDs):
+
+```powershell
+Get-CimInstance Win32_Process | Where-Object { $goSpazaCurrent = $_; @($goSpazaTracked | Where-Object { $_.ProcessId -eq $goSpazaCurrent.ProcessId -and $_.CreationDate -eq $goSpazaCurrent.CreationDate }).Count -gt 0 } | Select-Object ProcessId, ParentProcessId, Name, CommandLine
+```
+
+Expected: no rows. Also check GoSpaza-associated Node command lines for processes created after the snapshot:
+
+```powershell
+$goSpazaRepoPattern = [regex]::Escape((Resolve-Path -LiteralPath '.').Path); Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object { $_.CommandLine -match $goSpazaRepoPattern } | Select-Object ProcessId, ParentProcessId, CommandLine
+```
+
+Review any rows; these can include intentionally running tools in the repository. The commands do not terminate anything.
+
+5. Check dev listening ports, both while running and after shutdown:
+
+```powershell
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in 9000,3000,3001,3002,3003 } | Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+Expected: the configured apps while running, no listeners after shutdown. Stop and inspect ownership if any remain; do not kill unrelated processes.
+
+Optional failure-path check: restart, then stop one of the printed pnpm PIDs in terminal B. Expect the supervisor to shut down the other apps and exit nonzero; repeat the process/port checks.
+
+```powershell
+Stop-Process -Id ([int](Read-Host 'pnpm PID printed for the development app to stop'))
+```
 
 ## Commands
 

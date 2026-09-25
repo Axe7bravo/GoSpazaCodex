@@ -11,7 +11,8 @@
     "test": "tsx --test tests/*.test.ts",
     "db:migrate": "medusa db:migrate",
     "auth:publishable-key": "medusa exec ./src/scripts/create-auth-publishable-key.ts",
-    "test:integration": "medusa exec ./src/scripts/verify-auth.ts"
+    "test:integration": "medusa exec ./src/scripts/verify-auth.ts",
+    "test:applications": "medusa exec ./src/scripts/verify-applications.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

@@ -20,3 +20,7 @@ Thumbs.db
 
 playwright-report/
 test-results/
+
+# Private M2 application documents
+.private/
+.private-tests/

@@ -85,3 +85,19 @@ test("anonymous me and already-expired logout are handled correctly", async () =
   await assert.doesNotReject(client.logout());
 });
 
+
+// The applicant client must never use the operational merchant identity probe.
+test("merchant applicant registration exchanges native session without provisioning", async () => {
+  const { createApplicantAuthClient } = await import("../src/auth");
+  const paths: string[] = [];
+  const fetcher: typeof fetch = async (input) => {
+    const path = new URL(String(input)).pathname; paths.push(path);
+    if (path.endsWith("/register")) return Response.json({ token: "fixture-token" });
+    if (path === "/auth/session") return Response.json({ success: true });
+    return Response.json({ applicant: true });
+  };
+  const client = createApplicantAuthClient({ baseUrl: "http://localhost:9000", fetcher });
+  await client.register("applicant@example.test", "fixture-password-long");
+  assert.deepEqual(paths, ["/auth/merchant/emailpass/register", "/auth/session", "/merchant/applicant/me"]);
+  assert.equal("account" in client, false);
+});

@@ -30,5 +30,7 @@ export function createApiClient(baseUrl: string, fetcher: typeof fetch = fetch) 
   };
 }
 
-export { AuthError, createAuthClient, createCustomerAuthClient, validateCredentials } from "./auth";
-export type { AuthClient, CustomerAuthClient } from "./auth";
+export { createApplicantAuthClient, AuthError, createAuthClient, createCustomerAuthClient, validateCredentials } from "./auth";
+export type { ApplicantAuthClient, AuthClient, CustomerAuthClient } from "./auth";
+
+export { createApplicationClient } from "./applications";
