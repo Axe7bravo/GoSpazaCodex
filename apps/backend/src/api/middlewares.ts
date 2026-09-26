@@ -17,7 +17,7 @@ export default defineMiddlewares({
     { matcher: /^\/store\/gospaza(?:\/.*)?$/i, middlewares: [requireActor("customer")] },
     { matcher: /^\/merchant(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, merchantBoundary] },
     { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, requireActor("driver")] },
-    { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [requireActor("user")] },
+    { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },
   ],
 });
 

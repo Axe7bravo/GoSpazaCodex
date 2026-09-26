@@ -42,7 +42,7 @@ function Application() {
     const url = URL.createObjectURL(await client.download(detail.application.id, document));
     const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.display_name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  const application = detail?.application; const editable = application?.status === "DRAFT";
+  const application = detail?.application; const editable = application?.status === "DRAFT" || application?.status === "MORE_INFORMATION_REQUIRED";
   return <div className="application-content">
     {error && <p role="alert" className="auth-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {!detail && !error && <p role="status">Loading application…</p>}
@@ -51,7 +51,11 @@ function Application() {
     {detail && application && form && <>
       <p className="application-status">Status: {application.status.replaceAll("_", " ")}</p>
       {application.submitted_at && <p>Submitted: {new Date(application.submitted_at).toLocaleString()}</p>}
-      {!editable && <p>Your application is read-only. Submission is not merchant approval.</p>}
+      {!editable && application.status !== "APPROVED" && <p>Your application is read-only. Submission is not merchant approval.</p>}
+      {application.status === "MORE_INFORMATION_REQUIRED" && <p>More information is needed. Update your details and documents, then resubmit.</p>}
+      {application.status === "REJECTED" && <p>This application was rejected. It cannot be edited or restarted.</p>}
+      {(detail.review_history ?? []).filter((event) => event.action === "INFORMATION_REQUESTED" || event.action === "REJECTED").map((event) => <section key={event.id}><h2>{event.action === "REJECTED" ? "Rejection reason" : "Review request"}</h2><p>{event.reason}</p></section>)}
+      {application.status === "APPROVED" && <section><h2>Application approved</h2>{detail.tenant ? <><p>Merchant setup complete.</p><p>Merchant: {detail.tenant.merchant.trading_name}</p><p>Store: {detail.tenant.store.name}</p></> : <p>Merchant access is unavailable. Contact support.</p>}</section>}
       <form onSubmit={(event) => { event.preventDefault(); void action(save); }} aria-busy={busy}>
         <fieldset disabled={!editable || busy} className="application-fields"><legend>Store and contact details</legend>
           {fields.map(({ key, label, max, optional }) => <label key={key}>{label}{optional ? " (optional)" : ""}<input name={key} value={form[key]} maxLength={max} type={key === "contact_email" ? "email" : "text"} onChange={(e) => setForm({ ...form, [key]: key === "country_code" ? e.target.value.toUpperCase() : e.target.value })} /></label>)}
@@ -70,7 +74,7 @@ function Application() {
           <label>File<input ref={fileInput} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label><Button disabled={!file || busy} onClick={() => void action(upload)}>Upload document</Button>
         </fieldset>}
       </section>
-      {editable && <section><h2>Submit application</h2><p>Complete the required contact and address fields. Submission locks editing; it does not approve a merchant account.</p><Button disabled={busy || detail.documents.some((d) => d.removal_pending)} onClick={() => { if (window.confirm("Submit this application? It will become read-only.")) void action(async () => { await save(); accept(await client.submit(application.id)); setNotice("Application submitted."); }); }}>Submit application</Button></section>}
+      {editable && <section><h2>{application.status === "MORE_INFORMATION_REQUIRED" ? "Resubmit application" : "Submit application"}</h2><p>Complete the required contact and address fields. Submission locks editing; it does not approve a merchant account.</p><Button disabled={busy || detail.documents.some((d) => d.removal_pending)} onClick={() => { if (window.confirm("Submit this application? It will become read-only.")) void action(async () => { await save(); accept(await client.submit(application.id)); setNotice("Application submitted."); }); }}>{application.status === "MORE_INFORMATION_REQUIRED" ? "Resubmit application" : "Submit application"}</Button></section>}
     </>}
   </div>;
 }

@@ -1,10 +1,12 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 const draft = { id: "mapp_fixture", legal_name: "Fixture Business", trading_name: "Fixture Shop", contact_name: "Applicant", contact_email: "applicant@example.test", contact_phone: "0123456789", address_line_1: "1 Test Street", address_line_2: "", city: "Test city", province: "Test province", postal_code: "1234", country_code: "ZA", intends_to_sell_alcohol: false, notes: "", status: "DRAFT", submitted_at: null, created_at: "2026-09-25T10:00:00Z", updated_at: "2026-09-25T10:00:00Z" };
-async function mock(page: Page, state: "none" | "DRAFT" | "SUBMITTED" | "APPROVED", admin = false) {
+async function mock(page: Page, state: "none" | "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "MORE_INFORMATION_REQUIRED" | "APPROVED" | "REJECTED", admin = false) {
   let application: Record<string, unknown> | null = state === "none" ? null : { ...draft, status: state, submitted_at: state === "DRAFT" ? null : "2026-09-25T10:00:00Z" };
   let documents: Array<Record<string, unknown>> = [];
   const mutations: string[] = [];
+  const review_history: Array<Record<string, unknown>> = [];
+  const tenant = { merchant: { id: "mer_fixture", legal_name: draft.legal_name, trading_name: draft.trading_name }, store: { id: "mstore_fixture", name: draft.trading_name }, membership: { member_type: "OWNER" } };
   await page.route("http://localhost:9000/**", async (route) => {
     const request = route.request(); const path = new URL(request.url()).pathname; const method = request.method();
     const headers = { "access-control-allow-origin": request.headers().origin ?? "http://localhost:3001", "access-control-allow-credentials": "true", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS" };
@@ -17,10 +19,20 @@ async function mock(page: Page, state: "none" | "DRAFT" | "SUBMITTED" | "APPROVE
     if (path.endsWith("/access")) { await route.fulfill({ headers, contentType: "application/pdf", body: "%PDF-1.4\nfixture\n%%EOF" }); return; }
     if (method === "POST" && path === "/merchant/applications") application = { ...draft };
     if (method === "PATCH") application = { ...application, ...request.postDataJSON() };
-    if (method === "POST" && path.endsWith("/submit")) application = { ...application, status: "SUBMITTED", submitted_at: "2026-09-25T10:00:00Z" };
+    if (method === "POST" && path.endsWith("/submit")) {
+      if (application?.status === "MORE_INFORMATION_REQUIRED") review_history.push({ id: "mrev_" + review_history.length, action: "RESUBMITTED", reason: "", created_at: draft.created_at });
+      application = { ...application, status: "SUBMITTED", submitted_at: draft.created_at };
+    }
+    const action = path.split("/").at(-1)!;
+    const transitions: Record<string, [string, string]> = { "start-review": ["UNDER_REVIEW", "REVIEW_STARTED"], "request-information": ["MORE_INFORMATION_REQUIRED", "INFORMATION_REQUESTED"], reject: ["REJECTED", "REJECTED"], approve: ["APPROVED", "APPROVED"] };
+    if (method === "POST" && path.startsWith("/admin/") && transitions[action]) {
+      const [status, event] = transitions[action]!;
+      application = { ...application, status };
+      review_history.push({ id: "mrev_" + review_history.length, action: event, reason: request.postDataJSON().reason ?? "", created_at: draft.created_at });
+    }
     if (method === "POST" && path.endsWith("/documents")) documents = [{ id: "madoc_fixture", display_name: "fixture.pdf", document_type: "OTHER", mime_type: "application/pdf", size_bytes: 100, removal_pending: false }];
     if (method === "DELETE") documents = [];
-    await reply({ application, documents });
+    await reply({ application, documents, review_history, tenant: application?.status === "APPROVED" ? tenant : null });
   });
   return { mutations };
 }
@@ -71,13 +83,73 @@ for (const status of ["SUBMITTED", "APPROVED"] as const) test(status + " applica
   await expect(page.getByRole("button", { name: "Upload document", exact: true })).toHaveCount(0);
   expect(state.mutations).toEqual([]);
 });
-test("admin can list and inspect submitted applications without mutation controls", async ({ page }) => {
+test("admin can list and inspect submitted applications before starting review", async ({ page }) => {
   const state = await mock(page, "SUBMITTED", true); await page.goto("http://localhost:3003/admin/merchant-applications");
   await page.getByLabel("Search legal or trading name").fill("Fixture");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("link", { name: "Fixture Shop", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Fixture Shop", exact: true })).toBeVisible();
-  await expect(page.getByText("Read-only review. No approval or provisioning action is available.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start review", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /approve|reject|save/i })).toHaveCount(0);
   expect(state.mutations).toEqual([]);
+});
+
+test("M3 information request lets the applicant edit documents and resubmit", async ({ page }) => {
+  await mock(page, "SUBMITTED", true);
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("http://localhost:3003/admin/merchant-applications/mapp_fixture");
+  await expect(page.getByRole("button", { name: "Approve application", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Start review", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Start review", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Request more information", exact: true })).toBeDisabled();
+  await page.getByLabel("Review reason", { exact: true }).fill("Please clarify the street address.");
+  await page.getByRole("button", { name: "Request more information", exact: true }).click();
+  await expect(page.getByText("Status: MORE INFORMATION REQUIRED", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve application", exact: true })).toHaveCount(0);
+  await page.goto("http://localhost:3001/application");
+  await expect(page.getByText("Please clarify the street address.", { exact: true })).toBeVisible();
+  await page.getByLabel("Street address", { exact: true }).fill("2 Corrected Street");
+  const refreshed = page.waitForResponse((response) => response.url().endsWith("/merchant/applicant/me"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus"))); await refreshed;
+  await expect(page.getByLabel("Street address", { exact: true })).toHaveValue("2 Corrected Street");
+  await page.getByLabel("File", { exact: true }).setInputFiles({ name: "fixture.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nfixture\n%%EOF") });
+  await page.getByRole("button", { name: "Upload document", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Download fixture.pdf", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Street address", { exact: true })).toHaveValue("2 Corrected Street");
+  await page.getByRole("button", { name: "Remove fixture.pdf", exact: true }).click();
+  await expect(page.getByText("No documents uploaded.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Resubmit application", exact: true }).click();
+  await expect(page.getByText("Status: SUBMITTED", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Street address", { exact: true })).toBeDisabled();
+});
+test("M3 rejection is visible and read-only for the applicant", async ({ page }) => {
+  await mock(page, "UNDER_REVIEW", true); page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("http://localhost:3003/admin/merchant-applications/mapp_fixture");
+  await page.getByLabel("Review reason", { exact: true }).fill("This application does not meet the requirements.");
+  await page.getByRole("button", { name: "Reject application", exact: true }).click();
+  await expect(page.getByText("Status: REJECTED", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /approve application|reject application|request more information|start review/i })).toHaveCount(0);
+  await page.goto("http://localhost:3001/application");
+  await expect(page.getByRole("heading", { name: "Rejection reason", exact: true })).toBeVisible();
+  await expect(page.getByText("This application does not meet the requirements.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Trading name", { exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /save draft|submit application|start application|upload document/i })).toHaveCount(0);
+});
+test("M3 confirmed approval displays provisioned merchant summary", async ({ page }) => {
+  const state = await mock(page, "UNDER_REVIEW", true);
+  await page.goto("http://localhost:3003/admin/merchant-applications/mapp_fixture");
+  await page.getByLabel("Review reason", { exact: true }).fill("Application reviewed and accepted.");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Approve application", exact: true }).click();
+  expect(state.mutations).toEqual([]);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Approve application", exact: true }).click();
+  await expect(page.getByText("Status: APPROVED", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /approve application|reject application|request more information|start review/i })).toHaveCount(0);
+  expect(state.mutations.filter((mutation) => mutation.endsWith("/approve"))).toHaveLength(1);
+  await page.goto("http://localhost:3001/application");
+  await expect(page.getByText("Merchant setup complete.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Merchant: Fixture Shop", { exact: true })).toBeVisible();
+  await expect(page.getByText("Store: Fixture Shop", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Trading name", { exact: true })).toBeDisabled();
 });

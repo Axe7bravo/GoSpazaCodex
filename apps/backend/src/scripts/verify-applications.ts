@@ -125,7 +125,9 @@ export default async function verifyApplications({ container }: ExecArgs) {
     assert.equal((await request(adminPath + "/documents/" + replacementId + "/access", a.cookie)).status, 401);
     const listing = await request("/admin/gospaza/merchant-applications?status=SUBMITTED&q=" + prefix + "&limit=1&offset=0", admin.cookie);
     assert.equal(listing.status, 200); assert.equal((await listing.json()).count, 1);
-    for (const decision of ["approve", "reject"]) assert.equal((await request(adminPath + "/" + decision, admin.cookie, "POST", {})).status, 404);
+    // M3 exposes decisions, but submitted applications cannot skip review.
+    assert.equal((await request(adminPath + "/approve", admin.cookie, "POST", { confirmed: true, reason: "Fixture" })).status, 400);
+    assert.equal((await request(adminPath + "/reject", admin.cookie, "POST", { reason: "Fixture" })).status, 400);
   } catch (error) { failures.push(error); }
   finally {
     // Limit cleanup to this run's tracked identities and unique-prefix applications.

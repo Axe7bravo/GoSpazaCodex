@@ -9,7 +9,7 @@ const Application = model.define("merchant_application", {
   address_line_1: model.text().default(""), address_line_2: model.text().default(""),
   city: model.text().default(""), province: model.text().default(""), postal_code: model.text().default(""), country_code: model.text().default("ZA"),
   intends_to_sell_alcohol: model.boolean().default(false), notes: model.text().default(""),
-  status: model.enum([...APPLICATION_STATUSES]).default("DRAFT"), submitted_at: model.dateTime().nullable(),
+  status: model.enum([...APPLICATION_STATUSES]).default("DRAFT"), submitted_at: model.dateTime().nullable(), last_submitted_at: model.dateTime().nullable(),
   documents: model.hasMany(() => Document, { mappedBy: "application" }),
 });
 export default Application;

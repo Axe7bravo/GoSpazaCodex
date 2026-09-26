@@ -1,5 +1,5 @@
 import { AuthError } from "./auth";
-import type { ApplicationFields, ApplicationDetail, ApplicationList, ApplicationDocument } from "@gospaza/contracts";
+import type { ApplicationFields, ApplicationDetail, ApplicationList, ApplicationDocument, ApplicationReviewAction, ApplicationReviewEvent, MerchantContext } from "@gospaza/contracts";
 export function createApplicationClient(baseUrl: string, admin = false, fetcher: typeof fetch = fetch) {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new Error("Invalid API URL");
@@ -17,7 +17,7 @@ export function createApplicationClient(baseUrl: string, admin = false, fetcher:
     return binary ? response.blob() : response.json();
   }
   const path = (id: string) => prefix + "/" + encodeURIComponent(id);
-  const ensureApplicant = () => { if (admin) throw new Error("Admin application review is read-only"); };
+  const ensureApplicant = () => { if (admin) throw new Error("Applicant client required"); };
   return {
     own: async (): Promise<ApplicationDetail> => { ensureApplicant(); return request(prefix + "/me"); },
     create: async (): Promise<ApplicationDetail> => { ensureApplicant(); return request(prefix, "POST", {}); },
@@ -31,6 +31,12 @@ export function createApplicationClient(baseUrl: string, admin = false, fetcher:
       if (query.status) params.set("status", query.status); if (query.q) params.set("q", query.q);
       return request(prefix + "?" + params);
     },
+    review: async (id: string, action: ApplicationReviewAction, input: { reason?: string; confirmed?: boolean }): Promise<ApplicationDetail> => {
+      if (!admin) throw new Error("Admin client required");
+      return request(path(id) + "/" + action, "POST", input);
+    },
+    history: async (id: string): Promise<{ review_history: ApplicationReviewEvent[] }> => request(path(id) + "/review-history"),
+    tenant: async (): Promise<MerchantContext> => { ensureApplicant(); return request("/merchant/me"); },
     detail: async (id: string): Promise<ApplicationDetail> => request(path(id)),
     download: async (id: string, document: ApplicationDocument): Promise<Blob> => request(path(id) + "/documents/" + encodeURIComponent(document.id) + "/access", "GET", undefined, true),
   };

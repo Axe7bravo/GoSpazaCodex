@@ -90,8 +90,8 @@ export default async function verifyAuth({ container }: ExecArgs) {
       const cookie = await login(actor, account.email);
       for (const [target, path] of Object.entries(paths)) {
         const response = await call(path, { cookie });
-        assert.equal(response.status, actor === target ? 200 : 401, actor + " -> " + target);
-        if (actor === target) assert.deepEqual(await response.json(), { actor: { type: actor, id: account.id } });
+        assert.equal(response.status, actor === target && actor !== "merchant" ? 200 : 401, actor + " -> " + target);
+        if (actor === target && actor !== "merchant") assert.deepEqual(await response.json(), { actor: { type: actor, id: account.id } });
       }
       if (actor === "customer") {
         const response = await call("/store/customers/me?fields=id,email", { cookie });
@@ -100,7 +100,7 @@ export default async function verifyAuth({ container }: ExecArgs) {
         assert.equal(data.customer.email, account.email);
       }
       assert.equal((await call("/auth/session", { method: "DELETE", cookie, origin: "https://attacker.example" })).status, 403);
-      assert.equal((await call(paths[actor], { cookie })).status, 200, "rejected CSRF did not log out");
+      assert.equal((await call(actor === "merchant" ? "/merchant/applicant/me" : paths[actor], { cookie })).status, 200, "rejected CSRF did not log out");
       assert.equal((await call("/auth/session", { method: "DELETE", cookie })).status, 200);
       assert.equal((await call(paths[actor], { cookie })).status, 401, "destroyed session cannot be replayed");
     }
