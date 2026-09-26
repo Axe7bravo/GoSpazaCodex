@@ -15,6 +15,7 @@ async function mockAuth(page: Page, actor: string, scenario: "success" | "invali
     if (request.method() === "OPTIONS") { await route.fulfill({ status: 204, headers }); return; }
     const reply = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: "application/json", body: JSON.stringify(body) });
     if (path === "/merchant/applicant/me") { await reply(active ? { applicant: scenario !== "wrong" } : {}, active ? 200 : 401); return; }
+    if (path === "/merchant/me") { await reply({}, 401); return; } // Applicant fixture has no operational membership.
     if (path === "/merchant/applications/me") { await reply({ application: null, documents: [] }); return; }
     if (path.includes("/emailpass")) {
       if (scenario === "unavailable") { await route.abort(); return; }
@@ -49,7 +50,7 @@ for (const app of apps) {
     await page.getByLabel("Email address").fill("browser@example.test");
     await page.getByLabel("Password", { exact: true }).fill("browser-fixture-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page).toHaveURL(base + app.protectedPath);
+    await expect(page).toHaveURL(base + (app.actor === "merchant" ? "/application" : app.protectedPath));
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();

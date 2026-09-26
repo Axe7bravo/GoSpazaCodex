@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SessionBoundary } from "@gospaza/ui/auth";
 import { Button } from "@gospaza/ui";
@@ -55,7 +56,7 @@ function Application() {
       {application.status === "MORE_INFORMATION_REQUIRED" && <p>More information is needed. Update your details and documents, then resubmit.</p>}
       {application.status === "REJECTED" && <p>This application was rejected. It cannot be edited or restarted.</p>}
       {(detail.review_history ?? []).filter((event) => event.action === "INFORMATION_REQUESTED" || event.action === "REJECTED").map((event) => <section key={event.id}><h2>{event.action === "REJECTED" ? "Rejection reason" : "Review request"}</h2><p>{event.reason}</p></section>)}
-      {application.status === "APPROVED" && <section><h2>Application approved</h2>{detail.tenant ? <><p>Merchant setup complete.</p><p>Merchant: {detail.tenant.merchant.trading_name}</p><p>Store: {detail.tenant.store.name}</p></> : <p>Merchant access is unavailable. Contact support.</p>}</section>}
+      {application.status === "APPROVED" && <section><h2>Application approved</h2>{detail.tenant ? <><p>Merchant setup complete.</p><p>Merchant: {detail.tenant.merchant.trading_name}</p><p>Store: {detail.tenant.store.name}</p><Link href="/merchant">Open merchant portal</Link></> : <p>Merchant access is unavailable. Contact support.</p>}</section>}
       <form onSubmit={(event) => { event.preventDefault(); void action(save); }} aria-busy={busy}>
         <fieldset disabled={!editable || busy} className="application-fields"><legend>Store and contact details</legend>
           {fields.map(({ key, label, max, optional }) => <label key={key}>{label}{optional ? " (optional)" : ""}<input name={key} value={form[key]} maxLength={max} type={key === "contact_email" ? "email" : "text"} onChange={(e) => setForm({ ...form, [key]: key === "country_code" ? e.target.value.toUpperCase() : e.target.value })} /></label>)}

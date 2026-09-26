@@ -27,3 +27,11 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 .application-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .application-summary dt { font-weight: 700; } .application-summary dd { margin: .4rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .application-fields, .application-summary { grid-template-columns: 1fr; } .application-layout { padding: .75rem; } }
+
+.merchant-portal { padding: clamp(1rem, 4vw, 3rem); }
+.portal-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.merchant-portal nav { display: flex; gap: 1.5rem; border-block: 1px solid #d8d0c3; padding-block: 1rem; margin-block: 1.5rem; }
+.merchant-portal button { padding: .6rem 1rem; border: 1px solid #8b857d; border-radius: .5rem; background: #fffdf8; color: #24211d; font: inherit; cursor: pointer; }
+.merchant-portal button:disabled { opacity: .6; cursor: wait; }
+.invite-link { padding: 1rem; border: 1px solid #d8d0c3; border-radius: .5rem; }
+@media (max-width: 640px) { .portal-header { align-items: start; flex-direction: column; } }

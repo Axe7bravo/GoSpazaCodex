@@ -1,3 +1,4 @@
+import { guardEmailPassRegistration } from "../lib/registration-guard";
 import { defineMiddlewares } from "@medusajs/framework/http";
 import { requestLogging } from "../lib/request-logging";
 import { authRateLimit, validateEmailPass } from "../lib/auth-rate-limit";
@@ -12,7 +13,7 @@ export default defineMiddlewares({
     { matcher: /^\/auth(?:\/.*)?$/i, middlewares: [authOrigin] },
     { matcher: /^\/auth\/[^/]+\/emailpass(?:\/register)?\/?$/i, method: ["POST", "GET"], middlewares: [authRateLimit, validateEmailPass] },
     { matcher: "/store/customers", method: "POST", middlewares: [authOrigin] },
-    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors] },
+    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors, guardEmailPassRegistration] },
     { matcher: "/auth/session", method: "POST", middlewares: [rotateSession] },
     { matcher: /^\/store\/gospaza(?:\/.*)?$/i, middlewares: [requireActor("customer")] },
     { matcher: /^\/merchant(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, merchantBoundary] },

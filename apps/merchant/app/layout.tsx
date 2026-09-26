@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "@gospaza/ui/tokens.css";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "GoSpaza | Merchant and picker portal", description: "GoSpaza application foundation" };
+export const metadata: Metadata = { referrer: "no-referrer", title: "GoSpaza | Merchant and picker portal", description: "GoSpaza application foundation" };
 export default function Layout({ children }: { children: ReactNode }) {
   return <html lang="en-ZA"><body>{children}</body></html>;
 }

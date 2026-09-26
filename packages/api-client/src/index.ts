@@ -34,3 +34,5 @@ export { createApplicantAuthClient, AuthError, createAuthClient, createCustomerA
 export type { ApplicantAuthClient, AuthClient, CustomerAuthClient } from "./auth";
 
 export { createApplicationClient } from "./applications";
+
+export * from "./team";
