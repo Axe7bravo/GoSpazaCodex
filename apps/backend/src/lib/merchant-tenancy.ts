@@ -1,12 +1,14 @@
 import { MedusaError } from "@medusajs/framework/utils";
 import type { MedusaRequest, MedusaResponse, MedusaNextFunction } from "@medusajs/framework/http";
 import type MarketplaceService from "../modules/marketplace/service";
+import { requireCapability } from "../modules/marketplace/team-policy";
 import { applicantIdentity } from "./applicant-auth";
 export type MerchantContext = Awaited<ReturnType<MarketplaceService["resolveTenant"]>>;
 type TenantRequest = MedusaRequest & { merchantContext?: MerchantContext };
 export async function requireMerchantTenant(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   try {
     (req as TenantRequest).merchantContext = await req.scope.resolve<MarketplaceService>("marketplace").resolveTenant(applicantIdentity(req));
+    requireCapability(merchantContext(req).membership.member_type, "MERCHANT_PORTAL_ACCESS");
     next();
   } catch (error) {
     if (error instanceof MedusaError && error.type === MedusaError.Types.UNAUTHORIZED) { res.status(401).json({ message: "Active merchant membership required." }); return; }

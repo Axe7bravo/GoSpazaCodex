@@ -236,3 +236,9 @@ The pnpm correction was reviewed statically only; Codex ran no shell commands or
 ## M3 merchant approval and provisioning
 
 See [M3 merchant provisioning](docs/M3_MERCHANT_PROVISIONING.md) for ownership decisions, controlled review actions, tenant resolution and the ordered verification commands. Admins can start review, request information, reject or confirm approval. Approval atomically provisions one merchant, physical store and owner membership. Native stock locations/channels remain deferred. `/merchant/me` now returns active tenant context; authentication alone no longer satisfies the operational probe. M1/M2 behavior is retained except for these explicitly superseded M3 boundaries. M3 implementation is pending user-run verification; no later milestone is implemented.
+
+## Merchant portal (M4)
+
+See [M4 merchant portal and RBAC](docs/M4_MERCHANT_PORTAL_RBAC.md) for roles, native auth safeguards, invitation lifecycle and ordered verification commands. Active members use /merchant and /merchant/team; applicants continue at /application. OWNER manages non-owner membership and manually shares one-time /invite#SECRET links. MANAGER has read-only team access; PICKER has portal/context access. Secrets stay in page memory during native merchant authentication and are hashed in the database. Email delivery, verified email, ownership transfer and merchant switching are deferred.
+
+MERCHANT_INVITATION_EXPIRY_DAYS defaults to 7 when unset and accepts whole days 1–30. No install is needed. M4 implementation awaits user-run verification; Codex has not executed commands.
