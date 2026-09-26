@@ -13,7 +13,7 @@ function List() {
   const [q, setQ] = useState(""); const [status, setStatus] = useState(""); const [busy, setBusy] = useState(false);
   async function load(offset = 0) { setBusy(true); setError(""); try { setResult(await client.list({ q, status, offset })); } catch (e) { if (e instanceof AuthError && e.kind === "unauthorized") window.location.replace("/login"); setError(e instanceof Error ? e.message : "Unable to load applications."); } finally { setBusy(false); } }
   useEffect(() => { let active = true; client.list({}).then((value) => { if (active) setResult(value); }).catch(() => { if (active) setError("Unable to load applications. Retry with Search."); }); return () => { active = false; }; }, []);
-  return <div className="application-content"><p>Submitted applications only. Review is read-only; approval and provisioning are not available.</p>
+  return <div className="application-content"><p>Submitted applications only. Open an application to review it and make a recorded decision.</p>
     <form onSubmit={(e) => { e.preventDefault(); void load(); }} className="review-filters"><label>Search legal or trading name<input value={q} maxLength={100} onChange={(e) => setQ(e.target.value)} /></label>
       <label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All submitted states</option>{applicationStatuses.filter((s) => s !== "DRAFT").map((s) => <option key={s}>{s}</option>)}</select></label><Button type="submit" disabled={busy}>Search</Button></form>
     {error && <p role="alert" className="auth-error">{error}</p>}{(!result || busy) && !error && <p role="status">Loading applications…</p>}

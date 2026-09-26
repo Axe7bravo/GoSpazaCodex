@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { MedusaError } from "@medusajs/framework/utils";
 import { applicationFields, parse, patchSchema, validateSubmission, validateDocument, MAX_FILE_BYTES } from "../src/modules/marketplace/validation";
 import { merchantBoundary } from "../src/lib/applicant-auth";
 import { privateFileConfig } from "../src/lib/private-file-config";
@@ -45,7 +46,7 @@ test("actorless merchant sessions are limited to applicant routes", async () => 
     for (const path of ["/merchant/applicant/me", "/merchant/applications/me", "/merchant/me", "/merchant/orders"]) {
       let allowed = false; let status = 0;
       const req = { originalUrl: path, path: "/", headers: {}, session: { auth_context: { actor_type: actor, actor_id: "", auth_identity_id: "fixture_identity" } },
-        scope: { resolve: () => ({ projectConfig: { http: { jwtSecret: "unit-fixture-only" } } }) },
+        scope: { resolve: (name: string) => name === "marketplace" ? { resolveTenant: async () => { throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "No membership"); } } : ({ projectConfig: { http: { jwtSecret: "unit-fixture-only" } } }) },
       } as unknown as import("@medusajs/framework/http").MedusaRequest;
       const res = { status(value: number) { status = value; return this; }, json() {} } as unknown as import("@medusajs/framework/http").MedusaResponse;
       await merchantBoundary(req, res, () => { allowed = true; });

@@ -4,10 +4,14 @@ import type { IFileModuleService } from "@medusajs/framework/types";
 import MarketplaceService from "../modules/marketplace/service";
 import type { ApplicationRow, DocumentRow } from "../modules/marketplace/service";
 import { applicationFields, parse, patchSchema, listSchema, validateDocument } from "../modules/marketplace/validation";
+import { approveMerchantWorkflow } from "../workflows/approve-merchant";
+import { emptyReviewInput, reasonInput, approvalInput } from "../modules/marketplace/review-policy";
+import type { ReviewAction } from "../modules/marketplace/review-policy";
+import type { AuthenticatedMedusaRequest } from "@medusajs/framework/http";
 import { applicantIdentity } from "./applicant-auth";
 export function appDTO(row: ApplicationRow) {
   const fields = Object.fromEntries(Object.keys(applicationFields.shape).map((key) => [key, row[key as keyof ApplicationRow]]));
-  return { id: row.id, ...fields, status: row.status, submitted_at: row.submitted_at, created_at: row.created_at, updated_at: row.updated_at };
+  return { id: row.id, ...fields, status: row.status, submitted_at: row.submitted_at, last_submitted_at: row.last_submitted_at, created_at: row.created_at, updated_at: row.updated_at };
 }
 export function documentDTO(row: DocumentRow) {
   return { id: row.id, document_type: row.document_type, display_name: row.display_name, mime_type: row.mime_type,
@@ -20,9 +24,14 @@ function id(req: MedusaRequest, name = "id") {
   if (typeof value !== "string" || !/^(?:mapp|madoc)_[a-zA-Z0-9-]{1,80}$/.test(value)) throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
   return value;
 }
-function respond(res: MedusaResponse, detail: { application: ApplicationRow; documents: DocumentRow[] }) {
+async function respond(req: MedusaRequest, res: MedusaResponse, detail: { application: ApplicationRow; documents: DocumentRow[] }) {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ application: appDTO(detail.application), documents: detail.documents.map(documentDTO) });
+  const history = await service(req).reviewHistory(detail.application.id);
+  const tenant = detail.application.status === "APPROVED" ? await service(req).resolveTenant(detail.application.applicant_identity_id).catch((error: unknown) => {
+    if (error instanceof MedusaError && error.type === MedusaError.Types.UNAUTHORIZED) return null;
+    throw error;
+  }) : null;
+  res.json({ application: appDTO(detail.application), documents: detail.documents.map(documentDTO), review_history: history.map((event) => reviewDTO(event, (req as AuthenticatedMedusaRequest).auth_context?.actor_type === "user")), tenant });
 }
 export async function create(req: MedusaRequest, res: MedusaResponse) {
   const fields = parse(patchSchema, req.body ?? {});
@@ -30,21 +39,21 @@ export async function create(req: MedusaRequest, res: MedusaResponse) {
   if (Object.keys(fields).length) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Create a draft before editing fields.");
   const row = await service(req).createDraft(applicantIdentity(req));
   if (!row) throw new Error("Draft creation failed");
-  respond(res, await service(req).detail(row.id, applicantIdentity(req)));
+  await respond(req, res, await service(req).detail(row.id, applicantIdentity(req)));
 }
 export async function own(req: MedusaRequest, res: MedusaResponse) {
   res.setHeader("Cache-Control", "no-store");
   const row = await service(req).own(applicantIdentity(req));
-  if (!row) { res.json({ application: null, documents: [] }); return; }
-  respond(res, await service(req).detail(row.id, applicantIdentity(req)));
+  if (!row) { res.json({ application: null, documents: [], review_history: [], tenant: null }); return; }
+  await respond(req, res, await service(req).detail(row.id, applicantIdentity(req)));
 }
-export async function edit(req: MedusaRequest, res: MedusaResponse) { respond(res, await service(req).edit(id(req), applicantIdentity(req), parse(patchSchema, req.body))); }
+export async function edit(req: MedusaRequest, res: MedusaResponse) { await respond(req, res, await service(req).edit(id(req), applicantIdentity(req), parse(patchSchema, req.body))); }
 export async function submit(req: MedusaRequest, res: MedusaResponse) {
   if (req.body && Object.keys(req.body).length) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Submission does not accept fields.");
-  respond(res, await service(req).submit(id(req), applicantIdentity(req)));
+  await respond(req, res, await service(req).submit(id(req), applicantIdentity(req)));
 }
 export async function upload(req: MedusaRequest, res: MedusaResponse) {
-  respond(res, await service(req).upload(id(req), applicantIdentity(req), validateDocument(req.body), files(req)));
+  await respond(req, res, await service(req).upload(id(req), applicantIdentity(req), validateDocument(req.body), files(req)));
 }
 export async function remove(req: MedusaRequest, res: MedusaResponse) {
   await service(req).removeDocument(id(req), id(req, "documentId"), applicantIdentity(req), files(req));
@@ -58,7 +67,7 @@ export async function adminList(req: MedusaRequest, res: MedusaResponse) {
 export async function adminDetail(req: MedusaRequest, res: MedusaResponse) {
   const result = await service(req).detail(id(req));
   if (result.application.status === "DRAFT") throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application not found.");
-  respond(res, result);
+  await respond(req, res, result);
 }
 export const access = (admin = false) => async (req: MedusaRequest, res: MedusaResponse) => {
   const applicationId = id(req);
@@ -70,4 +79,28 @@ export const access = (admin = false) => async (req: MedusaRequest, res: MedusaR
   res.setHeader("Content-Security-Policy", "sandbox"); res.setHeader("Content-Type", document.mime_type);
   res.setHeader("Content-Disposition", "attachment; filename=application-document" + (document.mime_type === "application/pdf" ? ".pdf" : document.mime_type === "image/png" ? ".png" : ".jpg"));
   res.send(bytes);
+};
+
+function reviewDTO(event: { id: string; action: string; reason: string; from_status: string; to_status: string; created_at: Date; platform_user_id?: string | null }, admin = false) {
+  return { id: event.id, action: event.action, reason: event.reason, from_status: event.from_status,
+    to_status: event.to_status, created_at: event.created_at, ...(admin ? { platform_user_id: event.platform_user_id } : {}) };
+}
+export const history = (admin = false) => async (req: MedusaRequest, res: MedusaResponse) => {
+  const applicationId = id(req);
+  if (admin && (await service(req).detail(applicationId)).application.status === "DRAFT") throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application not found.");
+  const events = await service(req).reviewHistory(applicationId, admin ? undefined : applicantIdentity(req));
+  res.setHeader("Cache-Control", "no-store"); res.json({ review_history: events.map((event) => reviewDTO(event, admin)) });
+};
+export const decision = (action: ReviewAction) => async (req: MedusaRequest, res: MedusaResponse) => {
+  const context = (req as AuthenticatedMedusaRequest).auth_context;
+  if (context?.actor_type !== "user" || !context.actor_id) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform user required.");
+  const applicationId = id(req);
+  if (action === "approve") {
+    const input = parse(approvalInput, req.body);
+    await approveMerchantWorkflow(req.scope).run({ input: { applicationId, platformUserId: context.actor_id, reason: input.reason } });
+  } else {
+    const input = action === "start-review" ? parse(emptyReviewInput, req.body ?? {}) : parse(reasonInput, req.body);
+    await service(req).review(applicationId, context.actor_id, action, "reason" in input ? String(input.reason) : "");
+  }
+  await respond(req, res, await service(req).detail(applicationId));
 };

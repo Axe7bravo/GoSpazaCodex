@@ -1,3 +1,6 @@
-import { actorIdentity } from "../../../lib/auth-policy";
-
-export const GET = actorIdentity("merchant");
+import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
+import { merchantContext } from "../../../lib/merchant-tenancy";
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(merchantContext(req));
+}
