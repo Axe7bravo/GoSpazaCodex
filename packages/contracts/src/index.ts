@@ -7,3 +7,5 @@ export interface CustomerAccount { id: string; email: string; first_name: string
 export * from "./applications";
 
 export * from "./catalogue";
+
+export * from "./location";

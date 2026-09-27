@@ -38,3 +38,5 @@ export { createApplicationClient } from "./applications";
 export * from "./team";
 
 export * from "./catalogue";
+
+export * from "./location";
