@@ -250,3 +250,38 @@ See [M5 catalogue and inventory](docs/M5_CATALOGUE_INVENTORY.md) for native owne
 Run the M5 migration and commerce backfill before using existing merchants. Future approvals use the same bootstrap. The custom File Module provider adds direct AWS SDK dependencies; run the documented frozen-lockfile install. M5 implementation requires user-run verification; Codex has not run commands. M6 and later features remain out of scope.
 
 Production object storage is **Cloudflare R2**: a dedicated private document bucket with public access disabled, plus a separate public catalogue bucket served through a production custom domain. The retained AWS SDK dependencies are S3-compatible client libraries. Existing `s3` provider values and `_S3_*` environment names describe the protocol; configure R2 endpoints and `region=auto` using `apps/backend/.env.production.example`. Use separate bucket-scoped R2 credentials and keep `r2.dev` disabled.
+
+## M6: service zones and customer location
+
+M6 keeps geographic policy in the marketplace module. Medusa 2.18.0 continues to own customer address text, Stock Locations, Fulfillment Sets and native Service Zones. No shipping options or discovery flows are created.
+
+- Platform users manage zones at `/admin/service-zones`: validated GeoJSON Polygon/MultiPolygon, active state, integer ZAR-cent fee, and store assignments.
+- Customers manage their own native addresses at `/account/addresses`. “Use current location” attaches browser coordinates. It does not geocode or verify the typed address. Addresses can be saved without coordinates.
+- Serviceability requires a customer session and the existing publishable API key. The response contains only `serviceable`, `eligible_store_count` and matching active `zone_ids`.
+- Polygon coordinates are longitude/latitude; outer and hole boundaries are included, hole interiors excluded. Rings must close, have nonzero area, and not self-intersect. Geometry is bounded to 2000 positions, 500 per ring; antimeridian-crossing edges are rejected. This is a planar local-delivery engine, not route-distance calculation.
+- Overlapping zones count each eligible store once. Inactive zones, assignments, stores and merchants are excluded. M6 does not select a fee among overlapping zones.
+- Native Service Zones deliberately have no Geo Zones: native country/province/city/postal rules cannot express the polygons. These records are future commerce hooks; they do not grant geographic eligibility.
+- Each store has one deterministic GoSpaza Fulfillment Set linked to its existing Stock Location. Each store-zone mapping has one deterministic native Service Zone. A PostgreSQL advisory lock serializes provisioning; native unique names and persisted unique references make interrupted writes retryable.
+- Unassigning deactivates the mapping and retains native resources. Failed setup remains inactive and can be retried by assigning the same store again.
+- Future approvals reuse this provisioning path. Existing M5 stores use `pnpm --filter @gospaza/backend run fulfillment:backfill`; M5 commerce provisioning must already have supplied Stock Locations. Running it again reuses resources.
+- Customer address create/update uses native compensating workflows plus the coordinate extension. Deletion removes coordinates before native deletion; if native deletion fails, the remaining owned address has no coordinates and deletion can be retried.
+- No new packages, storage credentials, geocoder or environment variables are required.
+
+M6 verification (repository root; stop on any failure):
+
+1. `pnpm run lint`
+2. `pnpm run typecheck`
+3. `pnpm run test`
+4. `pnpm run db:migrate` (existing PostgreSQL/Redis must be available)
+5. `pnpm --filter @gospaza/backend run fulfillment:backfill`
+6. `pnpm --filter @gospaza/backend run fulfillment:backfill` (repeat: no duplicate native records)
+7. `pnpm run dev` in a separate terminal, if the backend is not already running.
+8. `pnpm --filter @gospaza/backend run test:location` (real native sessions, PostgreSQL and HTTP; synthetic fixtures only)
+9. `pnpm --filter @gospaza/backend run test:provisioning` (approval regression)
+10. `pnpm --filter @gospaza/backend run test:catalogue` (commerce and cleanup regression)
+11. `pnpm run test:browser` (includes M1–M5 regressions and M6 journeys)
+12. Stop development with Ctrl+C, then `pnpm run build`.
+
+The integration fixture uses a unique M6 prefix and reports cleanup failures. Do not use it against production. No verification command was executed by Codex.
+
+M6 admin mutations also append platform-user-attributed audit events atomically with the custom change. Geometry is represented in the audit by its SHA-256 digest; customer location data is never included. Existing audit immutability protection rejects event updates.

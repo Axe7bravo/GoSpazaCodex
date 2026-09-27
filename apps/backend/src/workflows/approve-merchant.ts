@@ -1,3 +1,4 @@
+import { LocationService } from "../lib/location-service";
 import { ensureCommerce } from "../lib/commerce";
 import { createStep, StepResponse, createWorkflow, WorkflowResponse } from "@medusajs/framework/workflows-sdk";
 import type MarketplaceService from "../modules/marketplace/service";
@@ -7,7 +8,8 @@ const provisionMerchant = createStep("gospaza-provision-merchant-atomically", as
   return new StepResponse(context);
 });
 const commerce = createStep("gospaza-approve-commerce", async (context: Awaited<ReturnType<MarketplaceService["provision"]>>, { container }) => {
-  await ensureCommerce(container, context.merchant.id);
+  const commerce = await ensureCommerce(container, context.merchant.id);
+  await new LocationService(container).ensureFulfillment(commerce.store.id);
   return new StepResponse(context);
 });
 // Existing M3 approval remains atomic. A failed native setup can be retried safely.
