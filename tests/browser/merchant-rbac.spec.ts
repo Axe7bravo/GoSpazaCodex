@@ -217,7 +217,11 @@ test("backend outage stays an error rather than redirecting a member to an appli
 
 test("active owner is routed to the portal and can sign out", async ({ page }) => {
   await mock(page);
-  await page.goto(base + "/");
+  // Await the client redirect, including its Next.js route response and chunks.
+  await Promise.all([
+    page.waitForURL(base + "/merchant"),
+    page.goto(base + "/"),
+  ]);
   await expect(page).toHaveURL(base + "/merchant");
   await expect(page.getByRole("heading", { name: "Merchant portal", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();

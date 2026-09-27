@@ -8,6 +8,7 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: "/merchant/products/:id/images", method: "POST", bodyParser: { sizeLimit: "8mb" } },
     { matcher: "/merchant/applications/:id/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/.*/, middlewares: [requestLogging] },
     { matcher: /^\/auth(?:\/.*)?$/i, middlewares: [authOrigin] },

@@ -102,6 +102,8 @@ export function MerchantShell({ children }: { children: ReactNode }) {
           </header>
           <nav aria-label="Merchant navigation">
             <Link href="/merchant">Overview</Link>
+            {tenant.membership.capabilities.includes("MERCHANT_CATALOG_VIEW") && <Link href="/merchant/products">Products</Link>}
+            {tenant.membership.capabilities.includes("MERCHANT_INVENTORY_VIEW") && <Link href="/merchant/inventory">Inventory</Link>}
             {tenant.membership.capabilities.includes("MERCHANT_TEAM_VIEW") && (
               <Link href="/merchant/team">Team</Link>
             )}

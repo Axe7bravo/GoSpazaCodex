@@ -1,3 +1,5 @@
+import ProductMarketplaceProfile from "./models/product-profile";
+import CatalogueMedia from "./models/catalogue-media";
 import { randomUUID } from "node:crypto";
 import { MedusaService, MedusaError } from "@medusajs/framework/utils";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
@@ -33,7 +35,7 @@ const APPS = "merchant_application";
 const DOCS = "merchant_application_document";
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
 const conflict = (message: string) => new MedusaError(MedusaError.Types.NOT_ALLOWED, message);
-export default class MarketplaceService extends MedusaService({ Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
+export default class MarketplaceService extends MedusaService({ ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
   private db: Knex;
   constructor(container: { __pg_connection__: Knex }) { super(container); this.db = container.__pg_connection__; }
   // All SQL is confined to this module's tables. Row locks serialize submit/edit/file mutations.

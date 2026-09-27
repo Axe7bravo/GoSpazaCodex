@@ -23,7 +23,7 @@ export interface ApplicationReviewEvent {
   reason: string; from_status: string; to_status: string; created_at: string; platform_user_id?: string | null;
 }
 export type MerchantMemberRole = "OWNER" | "MANAGER" | "PICKER";
-export type MerchantCapability = "MERCHANT_PORTAL_ACCESS" | "MERCHANT_CONTEXT_VIEW" | "MERCHANT_TEAM_VIEW" | "MERCHANT_TEAM_MANAGE";
+export type MerchantCapability = "MERCHANT_PORTAL_ACCESS" | "MERCHANT_CONTEXT_VIEW" | "MERCHANT_TEAM_VIEW" | "MERCHANT_TEAM_MANAGE" | "MERCHANT_CATALOG_VIEW" | "MERCHANT_CATALOG_MANAGE" | "MERCHANT_INVENTORY_VIEW" | "MERCHANT_INVENTORY_MANAGE";
 export interface MerchantContext {
   merchant: { id: string; legal_name: string; trading_name: string };
   store: { id: string; name: string };

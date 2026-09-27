@@ -35,3 +35,12 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 .merchant-portal button:disabled { opacity: .6; cursor: wait; }
 .invite-link { padding: 1rem; border: 1px solid #d8d0c3; border-radius: .5rem; }
 @media (max-width: 640px) { .portal-header { align-items: start; flex-direction: column; } }
+
+.catalogue-filters { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
+.catalogue-variants { grid-column: 1 / -1; }
+.catalogue-variants fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.catalogue-images { display: flex; flex-wrap: wrap; gap: 1rem; }
+.catalogue-images img { object-fit: cover; border-radius: .75rem; }
+.application-content input[type="checkbox"] { width: auto; align-self: start; }
+.application-content button[type="submit"] { background: var(--gs-orange, #ff7a1a); border-color: #24211d; font-weight: 700; }
+@media (max-width: 640px) { .catalogue-variants fieldset { grid-template-columns: 1fr; } .merchant-portal nav { flex-wrap: wrap; } }

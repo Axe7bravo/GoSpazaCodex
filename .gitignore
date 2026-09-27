@@ -24,3 +24,6 @@ test-results/
 # Private M2 application documents
 .private/
 .private-tests/
+
+# Public local M5 uploads (runtime data)
+apps/backend/static/catalogue/

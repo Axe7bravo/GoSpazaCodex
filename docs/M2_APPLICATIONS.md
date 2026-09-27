@@ -33,6 +33,9 @@ Admin screens are /admin/merchant-applications and /admin/merchant-applications/
 
 ## Native private file storage
 
+M5 deployment clarification: production storage is Cloudflare R2 via the single routed File Module provider. Existing document keys and authorized streaming remain unchanged. Keep the private R2 bucket public access disabled (no public custom domain or r2.dev access). R2 uses bucket privacy rather than S3 object ACLs; see [M5 storage configuration](M5_CATALOGUE_INVENTORY.md#file-module-adapter). The native-provider description below records the original M2 implementation.
+
+
 Inspected native File Module createFiles/deleteFiles/getAsBuffer, Local and S3 providers. The native abstraction supports access: private and authenticated byte retrieval, so no parallel storage provider was introduced. Marketplace owns document metadata and storage references; File Module/provider owns bytes. Files never enter PostgreSQL. Original names are display metadata only: uploads use server-generated UUID filenames.
 
 Local provider defaults put private files in static, so M2 explicitly overrides private_upload_dir to repository .private/merchant-documents. It is gitignored and outside served paths. Do not serve, publish, or symlink this directory into static/public. APPLICATION_FILES_LOCAL_DIR can specify another private absolute path. Existing local .env files need no changes unless choosing another directory.

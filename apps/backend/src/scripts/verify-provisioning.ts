@@ -1,3 +1,4 @@
+import { cleanupFixtureCommerce } from "./fixture-commerce-cleanup";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
@@ -100,7 +101,7 @@ export default async function verifyProvisioning({ container }: ExecArgs) {
     assert.equal((await db("merchant_store").where({ merchant_id: tenant.merchant.id })).length, 1);
     assert.equal((await db("merchant_member").where({ merchant_id: tenant.merchant.id, auth_identity_id: a.owner })).length, 1);
     const store = await db("merchant_store").where({ merchant_id: tenant.merchant.id }).first();
-    assert.equal(store.medusa_stock_location_id, null, "M3 defers inventory resources");
+    assert.ok(store.medusa_stock_location_id, "M5 approval provisions native inventory infrastructure");
     assert.equal(store.address_line_1, "2 Test Street");
     const approvals = (await market.reviewHistory(aid)).filter((e) => e.action === "APPROVED"); assert.equal(approvals.length, 1); assert.ok(userIds.includes(approvals[0]!.platform_user_id!));
     // Database uniqueness remains effective independently of service checks.
@@ -150,6 +151,8 @@ export default async function verifyProvisioning({ container }: ExecArgs) {
       const docs = await db("merchant_application_document").whereIn("application_id", ids).select("storage_key");
       const files = container.resolve<import("@medusajs/framework/types").IFileModuleService>(Modules.FILE);
       for (const doc of docs) await files.deleteFiles(doc.storage_key);
+      const fixtureMerchants = await db<{ id: string }>("merchant").whereIn("source_application_id", ids).select("id");
+      await cleanupFixtureCommerce(container, fixtureMerchants.map((row) => row.id));
       await db.transaction(async (trx) => {
         const merchants = await trx("merchant").whereIn("source_application_id", ids).select("id"); const mids = merchants.map((row) => row.id);
         await trx("merchant_member").whereIn("merchant_id", mids).delete(); await trx("merchant_store").whereIn("merchant_id", mids).delete();
