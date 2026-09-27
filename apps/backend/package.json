@@ -14,7 +14,10 @@
     "test:integration": "medusa exec ./src/scripts/verify-auth.ts",
     "test:applications": "medusa exec ./src/scripts/verify-applications.ts",
     "test:provisioning": "medusa exec ./src/scripts/verify-provisioning.ts",
-    "test:team": "medusa exec ./src/scripts/verify-team.ts"
+    "test:team": "medusa exec ./src/scripts/verify-team.ts",
+    "commerce:backfill": "medusa exec ./src/scripts/backfill-commerce.ts",
+    "test:catalogue": "medusa exec ./src/scripts/verify-catalogue.ts",
+    "catalogue:cleanup": "medusa exec ./src/scripts/cleanup-catalogue-media.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",
@@ -23,7 +26,9 @@
     "@medusajs/framework": "2.18.0",
     "@medusajs/medusa": "2.18.0",
     "ioredis": "^5.8.0",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "@aws-sdk/client-s3": "3.1139.0",
+    "@aws-sdk/s3-request-presigner": "3.1139.0"
   },
   "devDependencies": {
     "@gospaza/test-utils": "workspace:*",

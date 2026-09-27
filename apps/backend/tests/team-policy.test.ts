@@ -11,9 +11,9 @@ import { emailPassEmail } from "../src/lib/team-http";
 import type { IAuthModuleService } from "@medusajs/framework/types";
 
 test("M4 capability matrix and reusable backend rejection", () => {
-  assert.deepEqual(capabilitiesFor("OWNER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW", "MERCHANT_TEAM_VIEW", "MERCHANT_TEAM_MANAGE"]);
-  assert.deepEqual(capabilitiesFor("MANAGER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW", "MERCHANT_TEAM_VIEW"]);
-  assert.deepEqual(capabilitiesFor("PICKER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW"]);
+  assert.deepEqual(capabilitiesFor("OWNER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW", "MERCHANT_TEAM_VIEW", "MERCHANT_TEAM_MANAGE", "MERCHANT_CATALOG_VIEW", "MERCHANT_CATALOG_MANAGE", "MERCHANT_INVENTORY_VIEW", "MERCHANT_INVENTORY_MANAGE"]);
+  assert.deepEqual(capabilitiesFor("MANAGER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW", "MERCHANT_TEAM_VIEW", "MERCHANT_CATALOG_VIEW", "MERCHANT_CATALOG_MANAGE", "MERCHANT_INVENTORY_VIEW", "MERCHANT_INVENTORY_MANAGE"]);
+  assert.deepEqual(capabilitiesFor("PICKER"), ["MERCHANT_PORTAL_ACCESS", "MERCHANT_CONTEXT_VIEW", "MERCHANT_CATALOG_VIEW", "MERCHANT_INVENTORY_VIEW"]);
   for (const role of ["MANAGER", "PICKER"] as const) {
     assert.throws(() => requireCapability(role, "MERCHANT_TEAM_MANAGE"), { type: MedusaError.Types.FORBIDDEN });
   }

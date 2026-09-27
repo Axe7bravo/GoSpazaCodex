@@ -69,6 +69,12 @@ importers:
 
   apps/backend:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1139.0
+        version: 3.1139.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: 3.1139.0
+        version: 3.1139.0
       '@gospaza/config':
         specifier: workspace:*
         version: link:../../packages/config
