@@ -9,3 +9,5 @@ export * from "./applications";
 export * from "./catalogue";
 
 export * from "./location";
+
+export * from "./storefront";

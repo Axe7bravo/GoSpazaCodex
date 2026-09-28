@@ -19,7 +19,8 @@
     "test:catalogue": "medusa exec ./src/scripts/verify-catalogue.ts",
     "catalogue:cleanup": "medusa exec ./src/scripts/cleanup-catalogue-media.ts",
     "fulfillment:backfill": "medusa exec ./src/scripts/backfill-fulfillment.ts",
-    "test:location": "medusa exec ./src/scripts/verify-location.ts"
+    "test:location": "medusa exec ./src/scripts/verify-location.ts",
+    "test:discovery": "medusa exec ./src/scripts/verify-discovery.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

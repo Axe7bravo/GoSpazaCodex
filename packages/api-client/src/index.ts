@@ -40,3 +40,5 @@ export * from "./team";
 export * from "./catalogue";
 
 export * from "./location";
+
+export * from "./storefront";

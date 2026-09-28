@@ -63,13 +63,40 @@ test("catalogue DTO excludes private and untracked native image URLs", async () 
       prices: [{ amount: "10.99", currency_code: "zar", price_list_id: null, min_quantity: null, max_quantity: null }],
       inventory_items: [{ inventory_item_id: "iitem_fixture", required_quantity: 1 }] }],
   };
+  // Prejoined media/profile rows; model the filtering and projection used by Knex.
+  let rows = [
+    { public_url: product.images[0]!.url, file_key: "gospaza-public-v1/fixture.png" },
+    { public_url: product.images[1]!.url, file_key: "merchant-applications/legacy.png" },
+  ].map((row) => ({
+    "product_marketplace_profile.medusa_product_id": product.id,
+    "catalogue_media.public_url": row.public_url,
+    "catalogue_media.file_key": row.file_key,
+    "catalogue_media.removal_pending": false,
+    "catalogue_media.deleted_at": null,
+    "product_marketplace_profile.deleted_at": null,
+  }));
+  type Column = keyof (typeof rows)[number];
   const query = {
-    join() { return this; },
-    where() { return this; },
-    select: async () => [
-      { public_url: product.images[0]!.url, file_key: "gospaza-public-v1/fixture.png" },
-      { public_url: product.images[1]!.url, file_key: "merchant-applications/legacy.png" },
-    ],
+    join(table: string, left: string, right: string) {
+      assert.deepEqual([table, left, right], ["product_marketplace_profile", "catalogue_media.profile_id", "product_marketplace_profile.id"]);
+      return this;
+    },
+    whereIn(column: Column, values: string[]) {
+      rows = rows.filter((row) => typeof row[column] === "string" && values.some((value) => value === row[column]));
+      return this;
+    },
+    where(filters: Partial<Record<Column, string | boolean | null>>) {
+      rows = rows.filter((row) => Object.entries(filters).every(([filter, expected]) =>
+        Object.entries(row).some(([column, value]) => column === filter && value === expected)));
+      return this;
+    },
+    whereNull(column: Column) {
+      rows = rows.filter((row) => row[column] === null);
+      return this;
+    },
+    select: async (...columns: Column[]) => rows.map((row) => Object.fromEntries(
+      columns.map((column) => [column.split(".").at(-1)!, row[column]]),
+    )),
   };
   const container = { resolve: (key: string) => {
     if (key === ContainerRegistrationKeys.PG_CONNECTION) return () => query;

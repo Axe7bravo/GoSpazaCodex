@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { transition } from "./transitions";
 import type { Page } from "@playwright/test";
 import type { CatalogueProduct, CatalogueWrite, MerchantCapability, MerchantContext, MerchantMemberRole } from "../../packages/contracts/src";
 
@@ -118,7 +119,13 @@ test("owner creates a simple published restricted product", async ({ page }) => 
   await page.getByLabel("Stocked units", { exact: true }).fill("12");
   await page.getByLabel("Alcohol / restricted product", { exact: true }).check();
   await page.getByRole("combobox", { name: "Product status", exact: true }).selectOption("published");
-  await page.getByRole("button", { name: "Create product", exact: true }).click();
+  await transition(page, {
+    url: base + "/merchant/products/prod_created",
+    responses: [
+      { path: "/merchant/products", method: "POST", status: 201 },
+      { path: "/merchant/products/prod_created", method: "GET" },
+    ],
+  }, () => page.getByRole("button", { name: "Create product", exact: true }).click());
   await expect(page).toHaveURL(base + "/merchant/products/prod_created");
   await expect(page.getByLabel("Product title", { exact: true })).toHaveValue("Local juice");
   expect(state.products[0]?.variants[0]?.price_minor).toBe(10999);
@@ -137,7 +144,13 @@ test("owner creates predefined 500g 1kg and 2kg variants", async ({ page }) => {
     await group.getByLabel("Price (ZAR)", { exact: true }).fill(String(10 + index));
     await group.getByLabel("Stocked units", { exact: true }).fill(String(12 + index));
   }
-  await page.getByRole("button", { name: "Create product", exact: true }).click();
+  await transition(page, {
+    url: base + "/merchant/products/prod_created",
+    responses: [
+      { path: "/merchant/products", method: "POST", status: 201 },
+      { path: "/merchant/products/prod_created", method: "GET" },
+    ],
+  }, () => page.getByRole("button", { name: "Create product", exact: true }).click());
   await expect(page).toHaveURL(base + "/merchant/products/prod_created");
   expect(state.products[0]?.variants.map((v) => v.title)).toEqual(["500g", "1kg", "2kg"]);
   expect(state.products[0]?.variants.map((v) => v.stocked_quantity)).toEqual([12, 13, 14]);
@@ -174,11 +187,19 @@ test("picker has read-only catalogue and inventory", async ({ page }) => {
   await page.goto(base + "/merchant/products");
   await expect(page.getByRole("link", { name: "Fixture tomatoes", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create product", exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Fixture tomatoes", exact: true }).click();
+  await transition(page, {
+    url: base + "/merchant/products/prod_fixture",
+    responses: [{ path: "/merchant/products/prod_fixture", method: "GET" }],
+  }, () => page.getByRole("link", { name: "Fixture tomatoes", exact: true }).click());
+  await expect(page).toHaveURL(base + "/merchant/products/prod_fixture");
   await expect(page.getByLabel("Product title", { exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save product", exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Upload product image", { exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await transition(page, {
+    url: base + "/merchant/inventory",
+    responses: [{ path: "/merchant/inventory", method: "GET" }],
+  }, () => page.getByRole("link", { name: "Inventory", exact: true }).click());
+  await expect(page).toHaveURL(base + "/merchant/inventory");
   await expect(page.getByRole("cell", { name: "TOMATO", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save stock", exact: true })).toHaveCount(0);
   expect(state.writes).toEqual([]);

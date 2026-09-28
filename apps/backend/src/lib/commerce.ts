@@ -59,3 +59,37 @@ export async function ensureCommerce(container: MedusaContainer, merchantId: str
     return commerceContext(container, merchantId);
   });
 }
+
+export interface CommerceReference {
+  id: string;
+  merchant_id: string;
+  name: string;
+  medusa_sales_channel_id: string | null;
+  medusa_stock_location_id: string | null;
+}
+
+// Batch the same native topology check used by merchant catalogue reads.
+// Missing/disabled infrastructure is excluded; operational query failures propagate.
+export async function usableCommerceStores(container: MedusaContainer, stores: CommerceReference[]) {
+  const candidates = stores.filter((store) => store.medusa_sales_channel_id && store.medusa_stock_location_id);
+  if (!candidates.length) return [];
+  const channelIds = candidates.map((store) => store.medusa_sales_channel_id!);
+  const locationIds = candidates.map((store) => store.medusa_stock_location_id!);
+  const query = container.resolve<{
+    graph(input: { entity: string; fields: string[]; filters: Record<string, unknown>; pagination: { take: null } }):
+      Promise<{ data: { sales_channel_id: string; stock_location_id: string }[] }>;
+  }>(ContainerRegistrationKeys.QUERY);
+  const [channels, locations, links] = await Promise.all([
+    container.resolve<ISalesChannelModuleService>(Modules.SALES_CHANNEL).listSalesChannels({ id: channelIds }, { take: null }),
+    container.resolve<IStockLocationService>(Modules.STOCK_LOCATION).listStockLocations({ id: locationIds }, { take: null }),
+    query.graph({ entity: "sales_channel_location", fields: ["sales_channel_id", "stock_location_id"],
+      filters: { sales_channel_id: channelIds }, pagination: { take: null } }),
+  ]);
+  const enabled = new Set(channels.filter((channel) => !channel.is_disabled).map((channel) => channel.id));
+  const existing = new Set(locations.map((location) => location.id));
+  return candidates.filter((store) => {
+    const linked = links.data.filter((link) => link.sales_channel_id === store.medusa_sales_channel_id);
+    return enabled.has(store.medusa_sales_channel_id!) && existing.has(store.medusa_stock_location_id!)
+      && linked.length === 1 && linked[0]?.stock_location_id === store.medusa_stock_location_id;
+  });
+}
