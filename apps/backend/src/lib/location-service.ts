@@ -140,7 +140,8 @@ export class LocationService {
       return this.zone(zoneId);
     });
   }
-  async serviceability(latitude: number, longitude: number) {
+  // Internal authoritative result. Public M6 responses deliberately omit store IDs.
+  async eligibleLocation(latitude: number, longitude: number) {
     input(coordinates, { latitude, longitude });
     // One SQL statement provides a coherent eligibility snapshot, including concurrent deactivation.
     const rows = await this.db("marketplace_service_zone as z")
@@ -164,6 +165,10 @@ export class LocationService {
       if (row.store_id && row.mapping_active && !row.mapping_deleted && row.store_active && !row.store_deleted &&
           row.merchant_status === "ACTIVE" && !row.merchant_deleted) stores.add(row.store_id);
     }
-    return { serviceable: stores.size > 0, eligible_store_count: stores.size, zone_ids: [...zones].sort() };
+    return { store_ids: [...stores].sort(), zone_ids: [...zones].sort() };
+  }
+  async serviceability(latitude: number, longitude: number) {
+    const result = await this.eligibleLocation(latitude, longitude);
+    return { serviceable: result.store_ids.length > 0, eligible_store_count: result.store_ids.length, zone_ids: result.zone_ids };
   }
 }

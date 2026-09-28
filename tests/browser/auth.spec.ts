@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { transition } from "./transitions";
 import type { Page } from "@playwright/test";
 
 // Browser UX tests intercept HTTP. The backend's separate test:integration script
@@ -41,21 +42,54 @@ const apps = [
   { app: "driver", actor: "driver", port: 3002, protectedPath: "/" },
   { app: "admin", actor: "user", port: 3003, protectedPath: "/" },
 ];
+// Readiness is per test: earlier suite activity may leave a Next dev route cold.
+// HTTP setup uses the isolated request fixture, never the mocked browser session.
+test.beforeEach(async ({ request }, testInfo) => {
+  const app = apps.find((candidate) => testInfo.title.startsWith(candidate.app + ":")) ?? apps[0]!;
+  const base = "http://localhost:" + app.port;
+  const paths = new Set(["/login", app.protectedPath]);
+  if (app.actor === "merchant") paths.add("/application");
+  if (testInfo.title.startsWith("customer registration")) paths.add("/register");
+  for (const path of paths) {
+    const response = await request.get(base + path);
+    try { expect(response.ok(), "Auth route must be ready: " + base + path).toBe(true); }
+    finally { await response.dispose(); }
+  }
+});
+
 for (const app of apps) {
   test(app.app + ": anonymous protection, login, restored session and logout", async ({ page }) => {
     await mockAuth(page, app.actor);
     const base = "http://localhost:" + app.port;
-    await page.goto(base + app.protectedPath);
+    await Promise.all([
+      page.waitForURL(base + "/login"),
+      page.goto(base + app.protectedPath),
+    ]);
     await expect(page).toHaveURL(base + "/login");
     await page.getByLabel("Email address").fill("browser@example.test");
     await page.getByLabel("Password", { exact: true }).fill("browser-fixture-password");
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page).toHaveURL(base + (app.actor === "merchant" ? "/application" : app.protectedPath));
+    const destination = base + (app.actor === "merchant" ? "/application" : app.protectedPath);
+    // Login may first navigate to / before the authenticated tenant redirect.
+    // Await that real navigation within the existing test budget, then assert it.
+    await transition(page, {
+      url: destination,
+      responses: [
+        { path: "/auth/session", method: "POST" },
+        ...(app.actor === "merchant" ? [
+          { path: "/merchant/me", method: "GET" as const, status: 401 },
+          { path: "/merchant/applications/me", method: "GET" as const },
+        ] : []),
+      ],
+    }, () => page.getByRole("button", { name: "Sign in", exact: true }).click());
+    await expect(page).toHaveURL(destination);
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     if (app.actor === "customer") await expect(page.getByText("browser@example.test", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await Promise.all([
+      page.waitForURL(base + "/login"),
+      page.getByRole("button", { name: "Sign out", exact: true }).click(),
+    ]);
     await expect(page).toHaveURL(base + "/login");
   });
   for (const scenario of ["invalid", "unavailable", "wrong"] as const) {

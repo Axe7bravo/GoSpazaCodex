@@ -285,3 +285,7 @@ M6 verification (repository root; stop on any failure):
 The integration fixture uses a unique M6 prefix and reports cleanup failures. Do not use it against production. No verification command was executed by Codex.
 
 M6 admin mutations also append platform-user-attributed audit events atomically with the custom change. Geometry is represented in the audit by its SHA-256 digest; customer location data is never included. Existing audit immutability protection rejects event updates.
+
+## M7: customer discovery and storefront
+
+See [M7 implementation and verification](docs/M7_CUSTOMER_DISCOVERY_STOREFRONT.md). Signed-in customers can select an M6 saved address or current location, discover eligible stores, browse native published products and search within their serviceable area. Home adapts to zero, one or multiple stores. M5 commerce and public-media ownership remain unchanged. No M7 migration, dependency installation or new environment setting is needed. Verification is pending user-run commands. No cart or M8 functionality is included.
