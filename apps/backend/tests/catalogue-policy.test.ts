@@ -1,6 +1,6 @@
 import { productDTO } from "../src/lib/catalogue-native";
 import type { NativeProduct } from "../src/lib/catalogue-native";
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { BigNumber, ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { MedusaContainer } from "@medusajs/framework/types";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -108,4 +108,13 @@ test("catalogue DTO excludes private and untracked native image URLs", async () 
   assert.equal(dto.variants[0]!.price_minor, 1099);
   assert.equal(JSON.stringify(dto).includes("merchant-applications"), false);
   assert.equal(JSON.stringify(dto).includes("private.example"), false);
+});
+
+test("native cart BigNumbers use the same exact minor-unit boundary as catalogue prices", () => {
+  for (const [native, minor] of [["10.99", 1099], ["21.98", 2198], ["0", 0]] as const) {
+    assert.equal(minorPrice(new BigNumber(native)), minor);
+  }
+  for (const native of ["10.991", "-1", "90071992547409.92"]) {
+    assert.throws(() => minorPrice(new BigNumber(native)));
+  }
 });

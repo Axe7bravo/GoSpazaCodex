@@ -1,5 +1,5 @@
 import { z } from "@medusajs/framework/zod";
-import { MedusaError } from "@medusajs/framework/utils";
+import { BigNumber, MedusaError } from "@medusajs/framework/utils";
 export const variantInput = z.object({
   id: z.string().max(100).optional(),
   title: z.string().trim().min(1).max(100),
@@ -32,8 +32,12 @@ export function nativePrice(cents: number): string {
   if (!Number.isSafeInteger(cents) || cents < 0) throw new Error("Invalid minor-unit amount.");
   return (BigInt(cents) / 100n).toString() + "." + (BigInt(cents) % 100n).toString().padStart(2, "0");
 }
-export function minorPrice(amount: string | number): number {
-  const text = String(amount);
+export function minorPrice(amount: string | number | BigNumber): number {
+  // Cart total decoration returns Medusa BigNumber objects before JSON serialization.
+  // toFixed() without precision preserves decimals; never round invalid sub-cent values.
+  const decimal = amount instanceof BigNumber ? amount.bigNumber : undefined;
+  if (amount instanceof BigNumber && !decimal) throw new Error("Missing native BigNumber value.");
+  const text = decimal ? decimal.toFixed() : String(amount);
   if (!/^\d+(?:\.\d{1,2})?$/.test(text)) throw new Error("Unsupported native price precision.");
   const [whole, fraction = ""] = text.split(".");
   const cents = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, "0"));

@@ -29,6 +29,9 @@ async function mockAuth(page: Page, actor: string, scenario: "success" | "invali
     if (path === "/store/customers/me") {
       await reply({ customer: { id: "cus_fixture", email: "browser@example.test", first_name: null, last_name: null } }); return;
     }
+    if (path === "/store/gospaza/cart") {
+      await reply({ cart: null, state: "empty", eligibility: "pending" }); return;
+    }
     if (path.endsWith("/me")) {
       await reply({ actor: { type: scenario === "wrong" ? "not-the-requested-actor" : actor, id: actor + "_fixture" } }); return;
     }

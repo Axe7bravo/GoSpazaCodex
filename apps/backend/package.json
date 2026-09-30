@@ -20,10 +20,13 @@
     "catalogue:cleanup": "medusa exec ./src/scripts/cleanup-catalogue-media.ts",
     "fulfillment:backfill": "medusa exec ./src/scripts/backfill-fulfillment.ts",
     "test:location": "medusa exec ./src/scripts/verify-location.ts",
-    "test:discovery": "medusa exec ./src/scripts/verify-discovery.ts"
+    "test:discovery": "medusa exec ./src/scripts/verify-discovery.ts",
+    "test:cart-foundation": "medusa exec ./src/scripts/verify-cart-foundation.ts",
+    "test:cart-mutations": "medusa exec ./src/scripts/verify-cart-mutations.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",
+    "@gospaza/contracts": "workspace:*",
     "@medusajs/admin-sdk": "2.18.0",
     "@medusajs/cli": "2.18.0",
     "@medusajs/framework": "2.18.0",

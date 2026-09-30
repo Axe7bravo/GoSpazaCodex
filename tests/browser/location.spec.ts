@@ -21,6 +21,7 @@ async function mock(page: Page, actor: "customer" | "user", serviceable = true) 
       await reply({ actor: { type: actor, id: actor + "_fixture" } }); return;
     }
     if (path === "/store/customers/me") { await reply({ customer: { id: "cus_fixture", email: "fixture@example.test", first_name: null, last_name: null } }); return; }
+    if (path === "/store/gospaza/cart") { await reply({ cart: null, state: "empty", eligibility: "pending" }); return; }
     if (path === "/store/gospaza/addresses") {
       if (method === "POST") { state.addresses.push({ ...request.postDataJSON() as AddressWrite, id: "cuaddr_fixture" }); await reply({ success: true }, 201); return; }
       await reply({ addresses: state.addresses }); return;
