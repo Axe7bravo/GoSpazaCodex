@@ -101,11 +101,34 @@ async function mock(page: Page, role: MerchantMemberRole = "OWNER", empty = fals
   return state;
 }
 
-test.beforeAll(async ({ request }) => {
+// HTML readiness alone does not load the client chunks used by navigation.
+// Fetch each route's declared scripts/styles before the browser journey, so a
+// warm HTML response cannot conceal cold Next development assets.
+test.beforeEach(async ({ request }) => {
+  const assets = new Set<string>();
   for (const route of ["/merchant/products", "/merchant/products/new", "/merchant/products/prod_fixture", "/merchant/inventory"]) {
     const response = await request.get(base + route);
-    expect(response.ok(), "M5 route must be ready: " + route).toBe(true);
-    await response.dispose();
+    try {
+      expect(response.ok(), "M5 route must be ready: " + route).toBe(true);
+      const html = await response.text();
+      for (const tag of html.matchAll(/<(?:script|link)\b[^>]*>/g)) {
+        const reference = /\b(?:src|href)="([^"]+)"/.exec(tag[0])?.[1];
+        if (!reference) continue;
+        const asset = new URL(reference.replaceAll("&amp;", "&"), base);
+        if (asset.origin === base && asset.pathname.startsWith("/_next/static/")) assets.add(asset.href);
+      }
+    } finally {
+      await response.dispose();
+    }
+  }
+  for (const asset of assets) {
+    const response = await request.get(asset);
+    try {
+      expect(response.ok(), "M5 browser asset must be ready: " + asset).toBe(true);
+      await response.body();
+    } finally {
+      await response.dispose();
+    }
   }
 });
 

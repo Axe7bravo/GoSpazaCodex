@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { DiscoveryLocation, PublicCatalogue, PublicProduct, PublicStore } from "@gospaza/contracts";
 import { storefront, useDiscoveryLocation } from "./shell";
+import { useCart } from "./cart-context";
 
 const money = (cents: number) => new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" }).format(cents / 100);
 function Loading<T>({ load, children }: { load: () => Promise<T>; children: (value: T) => ReactNode }) {
@@ -31,6 +32,33 @@ function StoreCards({ stores }: { stores: PublicStore[] }) {
     <p className="availability">Available in your area</p><h3><Link href={"/stores/" + store.id}>{store.name}</Link></h3><p>Explore this store’s catalogue.</p>
   </article>)}</div>;
 }
+function AddProduct({ product }: { product: PublicProduct }) {
+  const available = product.variants.filter((variant) => variant.availability === "in_stock");
+  const [variantId, setVariantId] = useState(available[0]?.id ?? "");
+  const [quantity, setQuantity] = useState(1);
+  const { location } = useDiscoveryLocation();
+  const { add, busy, loading } = useCart();
+  return <form className="add-cart" onSubmit={(event) => {
+    event.preventDefault();
+    if (location && variantId) void add(product, variantId, quantity, location);
+  }}>
+    <label>Variant for {product.title}<select value={variantId}
+      onChange={(event) => setVariantId(event.target.value)}>
+      {!available.length && <option value="">Out of stock</option>}
+      {product.variants.map((variant) => <option key={variant.id} value={variant.id}
+        disabled={variant.availability !== "in_stock"}>
+        {variant.title} — {money(variant.price_minor)}{variant.availability === "out_of_stock" ? " — Out of stock" : ""}
+      </option>)}
+    </select></label>
+    <label>Quantity<input type="number" inputMode="numeric" min={1} step={1} max={99}
+      value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label>
+    <button type="submit" disabled={busy || loading || !location || !variantId || !Number.isSafeInteger(quantity) || quantity < 1}>
+      {busy ? "Updating cart…" : "Add to cart"}
+    </button>
+    {!location && <p className="muted">Choose a delivery location to add this item.</p>}
+  </form>;
+}
+
 function ProductCards({ products }: { products: PublicProduct[] }) {
   return <div className="product-grid">{products.map((product) => <article className="product-card" key={product.id}>
     {product.images[0] ? <Image unoptimized src={product.images[0].url} alt={product.title} width={480} height={360} /> : <div className="image-placeholder">GoSpaza</div>}
@@ -38,6 +66,7 @@ function ProductCards({ products }: { products: PublicProduct[] }) {
       <h3><Link href={"/products/" + product.id}>{product.title}</Link></h3>
       <p className="price">{product.min_price_minor === product.max_price_minor ? money(product.min_price_minor) : money(product.min_price_minor) + " – " + money(product.max_price_minor)}</p>
       <p className={product.availability === "in_stock" ? "availability" : "muted"}>{product.availability === "in_stock" ? "In stock" : "Out of stock"}</p>
+      <AddProduct product={product} />
       {product.requires_age_verification && <p className="restricted">Alcohol / restricted product</p>}
     </div>
   </article>)}</div>;
@@ -69,6 +98,7 @@ function ProductDetail({ product }: { product: PublicProduct }) {
         <strong>{variant.title}</strong><span>{money(variant.price_minor)}</span>
         <span className={variant.availability === "in_stock" ? "availability" : "muted"}>{variant.availability === "in_stock" ? "In stock" : "Out of stock"}</span>
       </li>)}</ul>
+      <AddProduct product={product} />
     </div>
   </article>;
 }

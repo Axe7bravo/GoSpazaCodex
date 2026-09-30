@@ -1,3 +1,4 @@
+import { blockNativeCarts } from "../lib/cart-http";
 import { guardEmailPassRegistration } from "../lib/registration-guard";
 import { defineMiddlewares } from "@medusajs/framework/http";
 import { requestLogging } from "../lib/request-logging";
@@ -8,6 +9,7 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/store\/carts(?:\/.*)?$/i, middlewares: [blockNativeCarts] },
     { matcher: "/merchant/products/:id/images", method: "POST", bodyParser: { sizeLimit: "8mb" } },
     { matcher: "/merchant/applications/:id/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/.*/, middlewares: [requestLogging] },

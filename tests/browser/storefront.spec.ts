@@ -33,6 +33,7 @@ async function mock(page: Page) {
     if (request.method() === "OPTIONS") { await route.fulfill({ status: 204, headers }); return; }
     if (path === "/store/gospaza/me") { await reply({ actor: { type: "customer", id: "cus_fixture" } }); return; }
     if (path === "/store/customers/me") { await reply({ customer: { id: "cus_fixture", email: "customer@example.test", first_name: null, last_name: null } }); return; }
+    if (path === "/store/gospaza/cart") { await reply({ cart: null, state: "empty", eligibility: "pending" }); return; }
     if (path === "/store/gospaza/addresses") {
       await reply({ addresses: [{
         id: "cuaddr_fixture", first_name: "Test", last_name: "Customer", address_1: "1 Fixture Street", address_2: "",
@@ -126,7 +127,7 @@ test("M7 store and product retain location and expose native variant presentatio
   await expect(variants.getByText("Out of stock", { exact: true })).toBeVisible();
   await expect(page.getByText("Alcohol / restricted product. Age verification will be required before purchase.", { exact: true })).toBeVisible();
   await expect(page.getByRole("img", { name: product.title, exact: true })).toHaveAttribute("src", product.images[0]!.url);
-  await expect(page.getByRole("button", { name: /add to cart/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add to cart", exact: true })).toBeVisible();
   expect(seen).toContain("/store/gospaza/stores/mstore_first/products");
   expect(seen).toContain("/store/gospaza/products/prod_tomatoes");
 });
