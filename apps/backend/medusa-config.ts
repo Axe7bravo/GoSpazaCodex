@@ -27,6 +27,9 @@ module.exports = defineConfig({
   modules: [
     { resolve: "./src/modules/marketplace" },
     privateFileConfig(process.env),
+    { resolve: "@medusajs/medusa/fulfillment", options: {
+      providers: [{ resolve: "@medusajs/medusa/fulfillment-manual", id: "manual" }],
+    } },
     { resolve: "@medusajs/medusa/event-bus-redis", options: { redisUrl: env.redisUrl } },
     { resolve: "@medusajs/medusa/workflow-engine-redis", options: { redis: { redisUrl: env.redisUrl } } },
     {

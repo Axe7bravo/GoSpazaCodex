@@ -1,3 +1,4 @@
+import { releaseContextHold } from "../modules/marketplace/delivery-reservation-repository";
 import { createCartWorkflow } from "@medusajs/medusa/core-flows";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { ICartModuleService, MedusaContainer } from "@medusajs/framework/types";
@@ -33,6 +34,10 @@ export async function switchMarketplaceCart(container: MedusaContainer, input: S
   });
   try {
     await db.transaction(async (trx) => {
+      const previous = await trx<CartContext>("cart_marketplace_context")
+        .where({ medusa_cart_id: input.oldCartId }).whereNull("superseded_at").whereNull("deleted_at").first();
+      if (!previous) throw new Error("Cart is no longer current.");
+      await releaseContextHold(trx, previous.id, "STORE_SWITCHED");
       await bindCart(trx, {
         cartId: candidate.id, merchantId: input.merchantId, storeId: input.storeId,
       });

@@ -32,7 +32,7 @@ export class DiscoveryService {
   constructor(private container: MedusaContainer, private customerId: string) {
     this.db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
   }
-  private async point(filters: DiscoveryInput) {
+  async point(filters: DiscoveryInput) {
     if (!filters.address_id) return input(coordinates, { latitude: filters.latitude, longitude: filters.longitude });
     const [address] = await this.container.resolve<ICustomerModuleService>(Modules.CUSTOMER)
       .listCustomerAddresses({ id: filters.address_id, customer_id: this.customerId }, { take: 1 });

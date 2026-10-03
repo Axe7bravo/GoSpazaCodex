@@ -44,3 +44,5 @@ export * from "./location";
 export * from "./storefront";
 
 export * from "./cart";
+
+export * from "./delivery";

@@ -1,3 +1,4 @@
+import { ensureSouthAfricaGeoZone } from "./scheduling-native";
 import { createHash, randomUUID } from "node:crypto";
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
 import type { MedusaContainer, IFulfillmentModuleService } from "@medusajs/framework/types";
@@ -126,11 +127,12 @@ export class LocationService {
       let zones = await native.listServiceZones({ name });
       if (mapping.medusa_service_zone_id) zones = [await native.retrieveServiceZone(mapping.medusa_service_zone_id)];
       if (!zones.length) {
-        const { result } = await createServiceZonesWorkflow(this.container).run({ input: { data: [{ name, fulfillment_set_id: setId, geo_zones: [] }] } });
+        const { result } = await createServiceZonesWorkflow(this.container).run({ input: { data: [{ name, fulfillment_set_id: setId, geo_zones: [{ type: "country", country_code: "za" }] }] } });
         zones = result;
       }
       const zone = zones[0];
       if (zones.length !== 1 || !zone || zone.name !== name || zone.fulfillment_set_id !== setId) throw conflict();
+      await ensureSouthAfricaGeoZone(this.container, zone.id, setId, mapping.id);
       await this.db.transaction(async (trx) => {
         await trx("merchant_store_service_zone").where({ id: mapping.id })
           .update({ medusa_service_zone_id: zone.id, active: true, updated_at: new Date() });

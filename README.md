@@ -289,3 +289,11 @@ M6 admin mutations also append platform-user-attributed audit events atomically 
 ## M7: customer discovery and storefront
 
 See [M7 implementation and verification](docs/M7_CUSTOMER_DISCOVERY_STOREFRONT.md). Signed-in customers can select an M6 saved address or current location, discover eligible stores, browse native published products and search within their serviceable area. Home adapts to zero, one or multiple stores. M5 commerce and public-media ownership remain unchanged. No M7 migration, dependency installation or new environment setting is needed. Verification is pending user-run commands. No cart or M8 functionality is included.
+
+## M9-B scheduling foundations
+
+Platform-admin configuration, native shipping compatibility/backfill, revision synchronization and verification instructions are documented in [M9-B scheduling foundations](docs/architecture/M9_B_SCHEDULING_FOUNDATIONS.md). Reservation operations and customer scheduling UI are not implemented in this slice.
+
+## M9-C reservation backend
+
+Customer reservation APIs, capacity locking, M8 integration and user-run verification are documented in [M9-C reservations](docs/architecture/M9_C_RESERVATIONS.md). Implementation is awaiting verification; customer scheduling UI remains M9-D scope.

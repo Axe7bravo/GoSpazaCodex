@@ -1,3 +1,4 @@
+import { releaseContextHold } from "../modules/marketplace/delivery-reservation-repository";
 import { addToCartWorkflow, updateLineItemInCartWorkflow, deleteLineItemsWorkflow } from "@medusajs/medusa/core-flows";
 import { switchMarketplaceCart } from "../workflows/switch-marketplace-cart";
 import { addCartInput, updateCartItemInput, removeCartItemInput, switchCartInput, cartLineId } from "../modules/marketplace/cart-mutation-policy";
@@ -66,6 +67,19 @@ export class CartFoundationService {
     if (candidates.length > 1) throw inconsistent();
     const cart = candidates[0];
     return cart ? { cart, context: contexts.find((context) => context.medusa_cart_id === cart.id)! } : null;
+  }
+
+  // Domain contract for scheduling. The callback runs under the same customer
+  // lock as native cart mutations; callers must not acquire that lock again.
+  async withCurrent<T>(hint: string | undefined, work: (current: {
+    cart: CartDTO; context: CartContext; valid: boolean;
+  }) => Promise<T>): Promise<T> {
+    return cartOperation(this.container, this.customerId, async () => {
+      const current = hint ? await this.requireCurrent(hint) : await this.current();
+      if (!current) throw unavailable();
+      const restored = await this.restoration(current.cart, current.context);
+      return work({ ...current, valid: restored.state === "current" });
+    });
   }
 
   async restore(hint?: string): Promise<CartFoundation> {
@@ -283,6 +297,12 @@ export class CartFoundationService {
       await deleteLineItemsWorkflow(this.container).run({
         input: { cart_id: current.cart.id, ids: [lineId] },
       });
+      // Native deletion has completed. A failed scheduling cleanup surfaces as
+      // uncertain through the existing M8 boundary; never replay native deletion.
+      const updated = await this.carts.retrieveCart(current.cart.id, { relations: ["items"] });
+      if (!updated.items?.length) {
+        await this.db.transaction((trx) => releaseContextHold(trx, current.context.id, "CART_EMPTY"));
+      }
       // Removing the final item preserves the immutable merchant binding.
       return current.cart.id;
     });

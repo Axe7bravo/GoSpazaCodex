@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { CartFoundation, CustomerCart, PublicProduct, PublicStore } from "@gospaza/contracts";
+import type { CartFoundation, CustomerCart, PublicProduct, PublicStore, DeliverySelection } from "@gospaza/contracts";
 import { transition } from "./transitions";
 
 const base = "http://localhost:3000";
@@ -54,17 +54,19 @@ async function mock(page: Page, seeded?: CartFoundation) {
     cartOutage: boolean;
     mutationBodies: unknown[];
     currentReads: number;
+    delivery: DeliverySelection;
     beforeUpdate?: () => Promise<void>;
   } = {
     foundation: seeded ?? { cart: null, state: "empty", eligibility: "pending" },
     uncertainNext: false, cartOutage: false, mutationBodies: [], currentReads: 0,
+    delivery: { state: "unselected", revision: 0, timezone: null, selection: null },
   };
   await page.route(api + "/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     const headers = {
       "access-control-allow-origin": base, "access-control-allow-credentials": "true",
       "access-control-allow-headers": "content-type,x-publishable-api-key",
-      "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS", "cache-control": "no-store",
+      "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS", "cache-control": "no-store",
     };
     const reply = (body: unknown, status = 200) =>
       route.fulfill({ status, headers, contentType: "application/json", body: JSON.stringify(body) });
@@ -82,6 +84,12 @@ async function mock(page: Page, seeded?: CartFoundation) {
       state.currentReads++;
       if (state.cartOutage) { await reply({ code: "CART_UNAVAILABLE" }, 503); return; }
       await reply(state.foundation); return;
+    }
+    if (path === "/store/gospaza/cart/delivery-selection") {
+      await reply(state.delivery); return;
+    }
+    if (path === "/store/gospaza/cart/delivery-options") {
+      await reply({ revision: 0, timezone: "Africa/Johannesburg", as_of: new Date().toISOString(), options: [], slots: [] }); return;
     }
     if (path === "/store/gospaza/discovery") {
       await reply({ mode: "multiple", eligible_store_count: 2, stores, count: 2, limit: 20, offset: 0 }); return;
@@ -122,6 +130,7 @@ async function mock(page: Page, seeded?: CartFoundation) {
       const body = request.postDataJSON() as { variant_id: string; quantity: number; confirm: boolean };
       state.mutationBodies.push(body);
       expect(body.confirm).toBe(true);
+      state.delivery = { state: "unselected", revision: 0, timezone: null, selection: null };
       expect(body).not.toHaveProperty("merchant_id");
       expect(body).not.toHaveProperty("store_id");
       state.foundation = { cart: cart(1, [{ id: "cali_bread", product: second,
@@ -198,8 +207,11 @@ test("first and same-store adds persist through navigation and support quantity/
   }, () => page.getByRole("button", { name: "Add to cart", exact: true }).click());
   await expect(page.getByRole("link", { name: "Cart (2)", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Stores", exact: true }).click();
-  await page.getByRole("link", { name: "Cart (2)", exact: true }).click();
+  await transition(page, { url: base + "/stores", responses: [] },
+    () => page.getByRole("link", { name: "Stores", exact: true }).click());
+  await expect(page.getByRole("heading", { name: "Available stores", exact: true })).toBeVisible();
+  await transition(page, { url: base + "/cart", responses: [] },
+    () => page.getByRole("link", { name: "Cart (2)", exact: true }).click());
   await expect(page).toHaveURL(base + "/cart");
   await expect(page.getByRole("heading", { name: first.title, exact: true })).toHaveCount(2);
   await page.reload();
@@ -229,6 +241,13 @@ test("cross-store conflict keeps the current cart until explicit switch confirma
   const seeded = { cart: cart(0, [{ id: "cali_tomatoes", product: first,
     variantId: "variant_500", quantity: 1 }]), state: "current", eligibility: "pending" } as const;
   const state = await mock(page, seeded);
+  state.delivery = { state: "held", revision: 1, timezone: "Africa/Johannesburg", selection: {
+    id: "dres_old", option_id: "doption_old", slot_id: "dslot_old", currency_code: "zar", fee_minor: 2500,
+    start_at: new Date(Date.now() + 7200000).toISOString(), end_at: new Date(Date.now() + 10800000).toISOString(),
+    expires_at: new Date(Date.now() + 900000).toISOString(),
+  } };
+  await page.goto(base + "/cart");
+  await expect(page.getByRole("heading", { name: "Reserved delivery window", exact: true })).toBeVisible();
   await context.grantPermissions(["geolocation"], { origin: base });
   await context.setGeolocation({ latitude: -29, longitude: 26 });
   await page.goto(base + "/products/" + second.id);
@@ -255,10 +274,16 @@ test("cross-store conflict keeps the current cart until explicit switch confirma
     ],
   }, () => dialog.getByRole("button", { name: "Start new cart for this store", exact: true }).click());
   await expect(page.getByRole("link", { name: "Cart (1)", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Cart (1)", exact: true }).click();
+  await transition(page, {
+    url: base + "/cart",
+    responses: [{ path: "/store/gospaza/cart/delivery-selection", method: "GET", query: { cart_id: "cart_second" } }],
+  }, () => page.getByRole("link", { name: "Cart (1)", exact: true }).click());
+  await expect(page).toHaveURL(base + "/cart");
   await expect(page.getByRole("heading", { name: second.title, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: first.title, exact: true })).toHaveCount(0);
   expect(state.foundation.cart?.items.map((item) => item.product_id)).toEqual([second.id]);
+  await expect(page.getByText("No active delivery reservation.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reserved delivery window", exact: true })).toHaveCount(0);
 });
 
 test("stale carts allow escape mutations and uncertain changes require reload", async ({ page, context }) => {
