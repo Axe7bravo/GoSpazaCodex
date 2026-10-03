@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 interface ExpectedResponse {
   path: string;
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   status?: number;
   query?: Record<string, string>;
 }

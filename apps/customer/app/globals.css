@@ -78,3 +78,10 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
   .cart-lines > li { grid-template-columns: 8rem minmax(0, 1fr) auto; align-items: center; }
   .quantity-control { grid-column: auto; justify-content: end; }
 }
+
+.delivery-panel { margin-block: 1.5rem; padding: clamp(1rem, 3vw, 2rem); border: 1px solid #d9d2c5; border-radius: 1rem; background: #fffaf2; }
+.delivery-panel fieldset { display: grid; gap: 1rem; margin-block: 1rem; border: 0; padding: 0; }
+.delivery-panel label { display: grid; gap: .5rem; }
+.delivery-panel select { width: 100%; max-width: 42rem; padding: .75rem; }
+.delivery-panel button { margin-block: .5rem; }
+.delivery-hold { margin-block: 1rem; padding: 1rem; border-left: 4px solid #34704b; }

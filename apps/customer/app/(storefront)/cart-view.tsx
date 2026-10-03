@@ -1,4 +1,5 @@
 "use client";
+import { DeliveryPanel } from "./delivery-panel";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "./cart-context";
@@ -74,9 +75,10 @@ export function CartView() {
         </div>
       </li>)}</ul>}
     {!location && cart.items.length > 0 && <p className="muted">Choose a delivery location to increase quantities. You can still decrease or remove items.</p>}
+    {cart.items.length > 0 && (busy ? <p role="status">Updating cart…</p> : <DeliveryPanel key={cart.id} cartId={cart.id} />)}
     <footer className="cart-summary">
       <span>Cart subtotal</span><strong>{money(cart.subtotal_minor)}</strong>
-      <p>Delivery and checkout are not available yet.</p>
+      <p>Checkout is not available yet. Delivery quotes are shown separately.</p>
     </footer>
   </section>;
 }

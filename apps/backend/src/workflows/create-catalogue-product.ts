@@ -1,3 +1,4 @@
+import { ensureShippingProfile } from "../lib/scheduling-native";
 import { randomUUID } from "node:crypto";
 import { createStep, StepResponse, createWorkflow, WorkflowResponse, transform } from "@medusajs/framework/workflows-sdk";
 import { createProductsWorkflow, createInventoryLevelsWorkflow, updateProductsWorkflow } from "@medusajs/medusa/core-flows";
@@ -31,11 +32,16 @@ const inventoryInputs = createStep("gospaza-product-inventory-inputs", async (
     return { inventory_item_id: inventoryId(variant), location_id: input.locationId, stocked_quantity: requested.stocked_quantity };
   }));
 });
+const shippingProfile = createStep("gospaza-catalogue-shipping-profile", async (_: void, { container }) => {
+  return new StepResponse(await ensureShippingProfile(container));
+});
 export const createCatalogueProductWorkflow = createWorkflow("gospaza-create-catalogue-product", (input: Input) => {
-  const creation = transform(input, (data) => ({
+  const profileId = shippingProfile();
+  const creation = transform({ input, profileId }, ({ input: data, profileId }) => ({
     products: [{
       title: data.product.title, description: data.product.description, status: ProductStatus.DRAFT,
       handle: "gospaza-" + randomUUID(),
+      shipping_profile_id: profileId,
       options: [{ title: "Variant", values: data.product.variants.map((variant) => variant.title) }],
       variants: data.product.variants.map((variant) => ({
         title: variant.title, sku: variant.sku || undefined, manage_inventory: true, allow_backorder: false,
