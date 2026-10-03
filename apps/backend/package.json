@@ -13,16 +13,30 @@
     "auth:publishable-key": "medusa exec ./src/scripts/create-auth-publishable-key.ts",
     "test:integration": "medusa exec ./src/scripts/verify-auth.ts",
     "test:applications": "medusa exec ./src/scripts/verify-applications.ts",
-    "test:provisioning": "medusa exec ./src/scripts/verify-provisioning.ts"
+    "test:provisioning": "medusa exec ./src/scripts/verify-provisioning.ts",
+    "test:team": "medusa exec ./src/scripts/verify-team.ts",
+    "commerce:backfill": "medusa exec ./src/scripts/backfill-commerce.ts",
+    "test:catalogue": "medusa exec ./src/scripts/verify-catalogue.ts",
+    "catalogue:cleanup": "medusa exec ./src/scripts/cleanup-catalogue-media.ts",
+    "fulfillment:backfill": "medusa exec ./src/scripts/backfill-fulfillment.ts",
+    "test:location": "medusa exec ./src/scripts/verify-location.ts",
+    "test:discovery": "medusa exec ./src/scripts/verify-discovery.ts",
+    "test:cart-foundation": "medusa exec ./src/scripts/verify-cart-foundation.ts",
+    "test:cart-mutations": "medusa exec ./src/scripts/verify-cart-mutations.ts",
+    "test:scheduling-foundation": "medusa exec ./src/scripts/verify-scheduling-foundation.ts",
+    "test:delivery-reservations": "medusa exec ./src/scripts/verify-delivery-reservations.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",
+    "@gospaza/contracts": "workspace:*",
     "@medusajs/admin-sdk": "2.18.0",
     "@medusajs/cli": "2.18.0",
     "@medusajs/framework": "2.18.0",
     "@medusajs/medusa": "2.18.0",
     "ioredis": "^5.8.0",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "@aws-sdk/client-s3": "3.1139.0",
+    "@aws-sdk/s3-request-presigner": "3.1139.0"
   },
   "devDependencies": {
     "@gospaza/test-utils": "workspace:*",

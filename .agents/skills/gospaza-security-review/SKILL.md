@@ -105,3 +105,66 @@ Do not invent findings. If a category has none, say `None identified`.
 ## Command policy
 
 Follow `AGENTS.md`. Do not run installs, migrations, tests, lint, typecheck, builds, Docker, dev servers, or command-heavy verification unless explicitly requested.
+
+## Cross-cutting application security review
+
+For every security-sensitive change, inspect applicable attack classes rather than mechanically checking all categories.
+
+Consider where relevant:
+
+- injection and unsafe query construction
+- output encoding / XSS
+- mass assignment / over-posting
+- object- and function-level authorization
+- enumeration and information disclosure
+- rate limiting / resource exhaustion
+- SSRF and unsafe outbound requests
+- file path traversal
+- unsafe deserialization
+- exception/error leakage
+- sensitive-data logging
+- secrets exposure
+- dependency / supply-chain changes
+- concurrency / TOCTOU
+- business-logic abuse
+
+### Data-flow analysis
+
+When untrusted data is involved, trace:
+
+SOURCE
+→ TRANSFORMATION
+→ TRUST BOUNDARY
+→ SINK
+
+Identify the validation and authorization performed at each boundary.
+
+Do not report a vulnerability merely because a suspicious pattern exists.
+Establish a credible weakness or abuse path.
+
+Classify findings as:
+
+- Confirmed vulnerability
+- Probable vulnerability
+- Potential weakness
+- Design concern
+- Defence-in-depth recommendation
+- Informational observation
+
+Do not inflate severity.
+
+### API abuse review
+
+For new or changed APIs, explicitly consider:
+
+- BOLA / object-level authorization
+- BFLA / function-level authorization
+- mass assignment
+- excessive data exposure
+- enumeration
+- rate/resource abuse
+- injection
+- SSRF where outbound requests exist
+
+Known IDs are never authorization.
+Frontend state is never authorization.

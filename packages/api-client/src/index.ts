@@ -34,3 +34,15 @@ export { createApplicantAuthClient, AuthError, createAuthClient, createCustomerA
 export type { ApplicantAuthClient, AuthClient, CustomerAuthClient } from "./auth";
 
 export { createApplicationClient } from "./applications";
+
+export * from "./team";
+
+export * from "./catalogue";
+
+export * from "./location";
+
+export * from "./storefront";
+
+export * from "./cart";
+
+export * from "./delivery";

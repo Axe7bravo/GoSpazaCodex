@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { transition } from "./transitions";
 import type { Page } from "@playwright/test";
 const draft = { id: "mapp_fixture", legal_name: "Fixture Business", trading_name: "Fixture Shop", contact_name: "Applicant", contact_email: "applicant@example.test", contact_phone: "0123456789", address_line_1: "1 Test Street", address_line_2: "", city: "Test city", province: "Test province", postal_code: "1234", country_code: "ZA", intends_to_sell_alcohol: false, notes: "", status: "DRAFT", submitted_at: null, created_at: "2026-09-25T10:00:00Z", updated_at: "2026-09-25T10:00:00Z" };
 async function mock(page: Page, state: "none" | "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "MORE_INFORMATION_REQUIRED" | "APPROVED" | "REJECTED", admin = false) {
@@ -84,10 +85,23 @@ for (const status of ["SUBMITTED", "APPROVED"] as const) test(status + " applica
   expect(state.mutations).toEqual([]);
 });
 test("admin can list and inspect submitted applications before starting review", async ({ page }) => {
-  const state = await mock(page, "SUBMITTED", true); await page.goto("http://localhost:3003/admin/merchant-applications");
+  const state = await mock(page, "SUBMITTED", true);
+  await transition(page, {
+    responses: [{ path: "/admin/gospaza/merchant-applications", method: "GET" }],
+  }, () => page.goto("http://localhost:3003/admin/merchant-applications"));
+  await expect(page.getByRole("link", { name: "Fixture Shop", exact: true })).toBeVisible();
   await page.getByLabel("Search legal or trading name").fill("Fixture");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("link", { name: "Fixture Shop", exact: true }).click();
+  await transition(page, {
+    responses: [{ path: "/admin/gospaza/merchant-applications", method: "GET", query: { q: "Fixture" } }],
+  }, () => page.getByRole("button", { name: "Search", exact: true }).click());
+  // Old result links remain visible while a search is pending.
+  await expect(page.getByRole("button", { name: "Search", exact: true })).toBeEnabled();
+  const detailUrl = "http://localhost:3003/admin/merchant-applications/mapp_fixture";
+  await transition(page, {
+    url: detailUrl,
+    responses: [{ path: "/admin/gospaza/merchant-applications/mapp_fixture", method: "GET" }],
+  }, () => page.getByRole("link", { name: "Fixture Shop", exact: true }).click());
+  await expect(page).toHaveURL(detailUrl);
   await expect(page.getByRole("heading", { name: "Fixture Shop", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start review", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /approve|reject|save/i })).toHaveCount(0);

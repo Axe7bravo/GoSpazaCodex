@@ -904,3 +904,153 @@ When instructions conflict, use this order of authority:
 4. Existing code behavior, if it does not contradict 1–3
 
 If a material ambiguity remains, state it rather than inventing a business rule.
+
+## 47. Repository Architecture Invariants
+
+These are constraints, not a checklist. If two constraints conflict, choose the design with the lowest long-term architectural cost and explain the tradeoff in the implementation report.
+
+### 1. One owner per business rule
+
+Every business rule has one authoritative home.
+
+Examples:
+
+- Marketplace/store ownership -> Marketplace module
+- Cart merchant/store binding -> CartMarketplaceContext / Marketplace
+- Geographic serviceability -> ServiceZone / Discovery
+- Catalogue ownership -> ProductMarketplaceProfile / Marketplace
+- Delivery scheduling/capacity -> M9 scheduling domain
+- Payments -> Medusa payment abstractions + GoSpaza provider integration
+- Finance/commission -> Finance domain
+
+Do not implement a rule in the first route, component, workflow, or feature that needs it.
+
+Before adding business logic, inspect the repository for the existing owner.
+
+If a rule already exists, extend its owner and call it through its public contract.
+
+### 2. Never create competing authority
+
+A fact must have one authoritative source.
+
+Do not introduce a second authoritative copy of:
+
+- customer identity
+- merchant identity
+- merchant-store ownership
+- cart ownership
+- product ownership
+- serviceability
+- shipping price
+- inventory
+- payment state
+- delivery reservation state
+- financial ledger state
+
+Cached, projected, snapshot, or browser values may exist only when their non-authoritative role is explicit.
+
+### 3. Do not duplicate business logic
+
+Search before implementing a rule, calculation, normalization, validation, threshold, money conversion, status interpretation, or ownership check.
+
+If a second caller needs existing logic:
+
+1. identify the current authoritative implementation;
+2. extract or expose it through the owning module if necessary;
+3. migrate the original caller without changing behavior;
+4. then use it from the new caller.
+
+Do not create a new helper while leaving equivalent logic elsewhere unless the implementation report explicitly explains why the behavior is intentionally different.
+
+### 4. Presentation does not own business decisions
+
+Next.js components, browser state, API clients, and route handlers must not independently decide:
+
+- merchant/store authority
+- prices
+- eligibility
+- capacity
+- ownership
+- commissions
+- refunds
+- delivery fees
+- payment state
+- order state transitions
+
+They may display server-derived values and submit user choices.
+
+Business decisions belong in the owning backend domain.
+
+### 5. Routes validate; services decide
+
+HTTP routes should:
+
+- authenticate
+- validate request shape
+- invoke the owning service/workflow
+- translate domain results into HTTP responses
+
+Do not place reusable business rules directly in route handlers.
+
+### 6. Depend on domain contracts
+
+Modules should interact through explicit services/contracts rather than reading another domain's tables directly.
+
+Direct cross-domain persistence access requires a documented architectural reason.
+
+Known IDs are never authorization.
+
+### 7. Native Medusa first
+
+Before adding a custom commerce model or workflow, inspect the pinned Medusa version for:
+
+1. native capability;
+2. configuration;
+3. native workflows/module links;
+4. small GoSpaza extension;
+5. full custom implementation only when necessary.
+
+Do not duplicate native Medusa ownership of products, variants, prices, inventory, carts, orders, payments, fulfillment, shipping methods, promotions, customers, or store credit.
+
+### 8. Refactors and behavior changes should be separable
+
+Do not hide a behavior change inside a broad refactor.
+
+When substantial restructuring is required:
+
+- preserve existing behavior first;
+- keep existing tests green;
+- then implement the new behavior.
+
+A small local refactor required directly by the feature may remain in the same slice when separating it would create unnecessary churn.
+
+### 9. Concurrency invariants require database enforcement
+
+A prompt saying "do not allow X" is insufficient for concurrency-sensitive rules.
+
+Where correctness depends on races, use appropriate:
+
+- database constraints
+- transactions
+- row/advisory locks
+- conditional writes
+- idempotency
+
+and prove the invariant with real concurrent tests.
+
+Process-local locks and browser state are never authoritative.
+
+### 10. Security boundaries require executable tests
+
+Important authority rules must be tested, not merely documented.
+
+Where relevant, tests must attempt:
+
+- foreign known IDs
+- stale IDs
+- superseded resources
+- forged tenant/customer/store identifiers
+- native API bypasses
+- concurrent conflicting requests
+
+Security-sensitive milestones are incomplete until those boundaries are exercised.

@@ -1,3 +1,5 @@
+import { LocationService } from "../lib/location-service";
+import { ensureCommerce } from "../lib/commerce";
 import { createStep, StepResponse, createWorkflow, WorkflowResponse } from "@medusajs/framework/workflows-sdk";
 import type MarketplaceService from "../modules/marketplace/service";
 type Input = { applicationId: string; platformUserId: string; reason: string };
@@ -5,6 +7,10 @@ const provisionMerchant = createStep("gospaza-provision-merchant-atomically", as
   const context = await container.resolve<MarketplaceService>("marketplace").provision(input.applicationId, input.platformUserId, input.reason);
   return new StepResponse(context);
 });
-// A single transaction is the complete business mutation: there are no external
-// side effects to compensate. Replays reconcile by the unique source application.
-export const approveMerchantWorkflow = createWorkflow("gospaza-approve-merchant", (input: Input) => new WorkflowResponse(provisionMerchant(input)));
+const commerce = createStep("gospaza-approve-commerce", async (context: Awaited<ReturnType<MarketplaceService["provision"]>>, { container }) => {
+  const commerce = await ensureCommerce(container, context.merchant.id);
+  await new LocationService(container).ensureFulfillment(commerce.store.id);
+  return new StepResponse(context);
+});
+// Existing M3 approval remains atomic. A failed native setup can be retried safely.
+export const approveMerchantWorkflow = createWorkflow("gospaza-approve-merchant", (input: Input) => new WorkflowResponse(commerce(provisionMerchant(input))));

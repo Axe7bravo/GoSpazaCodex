@@ -1,3 +1,6 @@
+import { blockNativeShipping } from "../lib/scheduling-http";
+import { blockNativeCarts } from "../lib/cart-http";
+import { guardEmailPassRegistration } from "../lib/registration-guard";
 import { defineMiddlewares } from "@medusajs/framework/http";
 import { requestLogging } from "../lib/request-logging";
 import { authRateLimit, validateEmailPass } from "../lib/auth-rate-limit";
@@ -7,14 +10,17 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/store\/shipping-options(?:\/.*)?$/i, middlewares: [blockNativeShipping] },
+    { matcher: /^\/store\/carts(?:\/.*)?$/i, middlewares: [blockNativeCarts] },
+    { matcher: "/merchant/products/:id/images", method: "POST", bodyParser: { sizeLimit: "8mb" } },
     { matcher: "/merchant/applications/:id/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/.*/, middlewares: [requestLogging] },
     { matcher: /^\/auth(?:\/.*)?$/i, middlewares: [authOrigin] },
     { matcher: /^\/auth\/[^/]+\/emailpass(?:\/register)?\/?$/i, method: ["POST", "GET"], middlewares: [authRateLimit, validateEmailPass] },
     { matcher: "/store/customers", method: "POST", middlewares: [authOrigin] },
-    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors] },
+    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors, guardEmailPassRegistration] },
     { matcher: "/auth/session", method: "POST", middlewares: [rotateSession] },
-    { matcher: /^\/store\/gospaza(?:\/.*)?$/i, middlewares: [requireActor("customer")] },
+    { matcher: /^\/store\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("customer")] },
     { matcher: /^\/merchant(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, merchantBoundary] },
     { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, requireActor("driver")] },
     { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },

@@ -1,3 +1,15 @@
+import StoreDeliveryPolicy from "./models/delivery-policy";
+import DeliveryOptionConfiguration from "./models/delivery-option";
+import DeliverySlot from "./models/delivery-slot";
+import DeliveryReservation from "./models/delivery-reservation";
+import SchedulingEvent from "./models/scheduling-event";
+import CartMarketplaceContext from "./models/cart-context";
+import ServiceZoneEvent from "./models/service-zone-event";
+import ServiceZone from "./models/service-zone";
+import StoreServiceZone from "./models/store-service-zone";
+import AddressLocation from "./models/address-location";
+import ProductMarketplaceProfile from "./models/product-profile";
+import CatalogueMedia from "./models/catalogue-media";
 import { randomUUID } from "node:crypto";
 import { MedusaService, MedusaError } from "@medusajs/framework/utils";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
@@ -8,6 +20,9 @@ import Merchant from "./models/merchant";
 import MerchantStore from "./models/merchant-store";
 import MerchantMember from "./models/merchant-member";
 import ReviewEvent from "./models/review-event";
+import MerchantInvitation from "./models/merchant-invitation";
+import { capabilitiesFor } from "./team-policy";
+import { MerchantTeamService } from "./team-service";
 import { editableApplication, reviewTransition, reasonInput, approvalInput } from "./review-policy";
 import type { ReviewAction } from "./review-policy";
 import { applicationFields, validateSubmission, parse } from "./validation";
@@ -30,7 +45,7 @@ const APPS = "merchant_application";
 const DOCS = "merchant_application_document";
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
 const conflict = (message: string) => new MedusaError(MedusaError.Types.NOT_ALLOWED, message);
-export default class MarketplaceService extends MedusaService({ Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent }) {
+export default class MarketplaceService extends MedusaService({ StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
   private db: Knex;
   constructor(container: { __pg_connection__: Knex }) { super(container); this.db = container.__pg_connection__; }
   // All SQL is confined to this module's tables. Row locks serialize submit/edit/file mutations.
@@ -179,7 +194,7 @@ export default class MarketplaceService extends MedusaService({ Application, Doc
       const store = await trx("merchant_store").where({ merchant_id: merchant.id }).first();
       if (!store) await trx("merchant_store").insert({ id: "mstore_" + randomUUID(), merchant_id: merchant.id, ...address });
       else if (store.deleted_at || store.medusa_stock_location_id || Object.entries(address).some(([key, value]) => store[key] !== value)) throw conflict("Inconsistent store provisioning. Contact support.");
-      const member = await trx("merchant_member").where({ merchant_id: merchant.id }).first();
+      const member = await trx("merchant_member").where({ merchant_id: merchant.id, member_type: "OWNER" }).first();
       if (!member) await trx("merchant_member").insert({ id: "mmem_" + randomUUID(), merchant_id: merchant.id, auth_identity_id: row.applicant_identity_id });
       else if (member.deleted_at || member.status !== "ACTIVE" || member.member_type !== "OWNER" || member.auth_identity_id !== row.applicant_identity_id) throw conflict("Inconsistent owner provisioning. Contact support.");
       await this.appendReview(trx, row, "APPROVED", "APPROVED", user, reason);
@@ -196,16 +211,19 @@ export default class MarketplaceService extends MedusaService({ Application, Doc
       .join("merchant_store as store", "store.merchant_id", "merchant.id")
       .join("merchant_application as application", "application.id", "merchant.source_application_id")
       .where({ "member.auth_identity_id": identity, "member.status": "ACTIVE", "merchant.status": "ACTIVE", "application.status": "APPROVED" })
-      .whereRaw("application.applicant_identity_id = member.auth_identity_id")
+      .whereRaw("(member.member_type <> 'OWNER' or application.applicant_identity_id = member.auth_identity_id)")
       .whereNull("member.deleted_at").whereNull("merchant.deleted_at").whereNull("store.deleted_at").whereNull("application.deleted_at")
-      .select("merchant.id as merchant_id", "merchant.source_application_id", "merchant.legal_name", "merchant.trading_name", "store.id as store_id", "store.name as store_name", "member.member_type").first();
+      .select("merchant.id as merchant_id", "merchant.source_application_id", "merchant.legal_name", "merchant.trading_name", "store.id as store_id", "store.name as store_name", "member.member_type", "member.id as member_id").first();
   }
-  private tenantDTO(row: { merchant_id: string; legal_name: string; trading_name: string; store_id: string; store_name: string; member_type: "OWNER" }) {
+  private tenantDTO(row: { merchant_id: string; legal_name: string; trading_name: string; store_id: string; store_name: string; member_type: "OWNER" | "MANAGER" | "PICKER"; member_id: string }) {
     return { merchant: { id: row.merchant_id, legal_name: row.legal_name, trading_name: row.trading_name },
-      store: { id: row.store_id, name: row.store_name }, membership: { member_type: row.member_type } };
+      store: { id: row.store_id, name: row.store_name }, membership: { id: row.member_id, member_type: row.member_type, capabilities: capabilitiesFor(row.member_type) } };
   }
-  async resolveTenant(identity: string) {
-    const tenant = identity ? await this.tenantQuery(identity) : null;
+  get teamService() {
+    return new MerchantTeamService(this.db, (identity, db) => this.resolveTenant(identity, db));
+  }
+  async resolveTenant(identity: string, db: Knex | Knex.Transaction = this.db) {
+    const tenant = identity ? await this.tenantQuery(identity, db) : null;
     if (!tenant) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Active merchant membership required.");
     return this.tenantDTO(tenant);
   }

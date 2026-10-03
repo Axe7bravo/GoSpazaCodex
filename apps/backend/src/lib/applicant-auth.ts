@@ -4,11 +4,12 @@ import type { MedusaRequest, MedusaResponse, MedusaNextFunction, AuthenticatedMe
 import { requireMerchantTenant } from "./merchant-tenancy";
 const applicant = authenticate("merchant", ["session"], { allowUnregistered: true });
 export function merchantBoundary(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
-  // An unprovisioned merchant identity is admitted ONLY to the application journey.
+  // Applicant routes and this exact POST require identity, but not existing tenancy.
   const applicationRoute = /^\/merchant\/(?:applications(?:\/|$)|applicant\/me\/?$)/i.test(req.originalUrl.split("?")[0] ?? "");
+  const acceptingInvitation = req.method === "POST" && /^\/merchant\/team\/invitations\/accept\/?$/i.test(req.originalUrl.split("?")[0] ?? "");
   return applicant(req, res, (error?: unknown) => {
     if (error) { next(error); return; }
-    if (applicationRoute) { next(); return; }
+    if (applicationRoute || acceptingInvitation) { next(); return; }
     return requireMerchantTenant(req, res, next);
   });
 }
