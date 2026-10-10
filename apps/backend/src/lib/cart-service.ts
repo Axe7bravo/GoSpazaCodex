@@ -1,3 +1,5 @@
+import { detachHistoricalCollection } from "./checkout-payment-links";
+import { assertCheckoutMutable } from "../modules/marketplace/checkout-repository";
 import { releaseContextHold } from "../modules/marketplace/delivery-reservation-repository";
 import { addToCartWorkflow, updateLineItemInCartWorkflow, deleteLineItemsWorkflow } from "@medusajs/medusa/core-flows";
 import { switchMarketplaceCart } from "../workflows/switch-marketplace-cart";
@@ -63,6 +65,13 @@ export class CartFoundationService {
     const contexts = carts.length ? await this.db<CartContext>("cart_marketplace_context")
       .whereIn("medusa_cart_id", carts.map((cart) => cart.id))
       .whereNull("superseded_at").whereNull("deleted_at") : [];
+    // Native completion can mark a cart completed before GoSpaza has a verified
+    // terminal receipt. Do not interpret that crash window as an empty cart.
+    const completedIds = carts.filter((cart) => cart.completed_at).map((cart) => cart.id);
+    if (completedIds.length && await this.db("checkout_attempt").whereIn("medusa_cart_id", completedIds)
+      .whereNull("closed_at").first()) {
+      throw new MedusaError(MedusaError.Types.CONFLICT, "CHECKOUT_FROZEN");
+    }
     const candidates = carts.filter((cart) => !cart.completed_at && contexts.some((context) => context.medusa_cart_id === cart.id));
     if (candidates.length > 1) throw inconsistent();
     const cart = candidates[0];
@@ -246,6 +255,8 @@ export class CartFoundationService {
         const { result } = await createMarketplaceCartWorkflow(this.container).run({ input: creation });
         return result;
       }
+      await assertCheckoutMutable(this.db, current.context.id);
+      await detachHistoricalCollection(this.container, current.cart.id);
       this.assertBinding(current.context, target);
       if ((await this.restoration(current.cart, current.context)).state !== "current") throw inconsistent();
       this.mutationStarted = true;
@@ -266,6 +277,8 @@ export class CartFoundationService {
       const current = await this.requireCurrent(input.cart_id);
       const item = current.cart.items?.find((line) => line.id === lineId);
       if (!item) throw unavailable();
+      await assertCheckoutMutable(this.db, current.context.id);
+      await detachHistoricalCollection(this.container, current.cart.id);
       const previous = Number(item.quantity);
       if (input.quantity > previous) {
         if (!input.location) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Choose a current delivery location.");
@@ -293,6 +306,8 @@ export class CartFoundationService {
     return cartOperation(this.container, this.customerId, async () => {
       const current = await this.requireCurrent(parsed.data.cart_id);
       if (!current.cart.items?.some((line) => line.id === lineId)) throw unavailable();
+      await assertCheckoutMutable(this.db, current.context.id);
+      await detachHistoricalCollection(this.container, current.cart.id);
       this.mutationStarted = true;
       await deleteLineItemsWorkflow(this.container).run({
         input: { cart_id: current.cart.id, ids: [lineId] },
@@ -314,6 +329,8 @@ export class CartFoundationService {
     const input = parsed.data;
     return cartOperation(this.container, this.customerId, async () => {
       const current = await this.requireCurrent(input.cart_id);
+      await assertCheckoutMutable(this.db, current.context.id);
+      await detachHistoricalCollection(this.container, current.cart.id);
       const target = await this.target(input.variant_id, input.location);
       if (current.context.merchant_id === target.merchantId && current.context.merchant_store_id === target.storeId) {
         throw new MedusaError(MedusaError.Types.INVALID_DATA, "The cart already belongs to this store.");

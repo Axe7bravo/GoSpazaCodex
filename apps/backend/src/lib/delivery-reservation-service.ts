@@ -1,3 +1,5 @@
+import type { CheckoutSnapshot } from "../modules/marketplace/checkout-policy";
+import { currentCheckout } from "../modules/marketplace/checkout-repository";
 import type { MedusaContainer, InferTypeOf } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
@@ -10,7 +12,7 @@ import type Policy from "../modules/marketplace/models/delivery-policy";
 import type { CartContext } from "../modules/marketplace/cart-context-repository";
 import { schedulingInput } from "../modules/marketplace/scheduling-policy";
 import { deliveryReadInput, deliveryLocationInput, deliverySelectionInput, deliveryReleaseInput } from "../modules/marketplace/delivery-selection-policy";
-import { activeHold, databaseTime, finishHold, lockSlots, occupied, reservationId, selectionRevision } from "../modules/marketplace/delivery-reservation-repository";
+import { activeHold, effectiveExpiry, databaseTime, finishHold, lockSlots, occupied, reservationId, selectionRevision } from "../modules/marketplace/delivery-reservation-repository";
 import type { Hold, DeliveryWindow } from "../modules/marketplace/delivery-reservation-repository";
 
 type PolicyRow = InferTypeOf<typeof Policy>;
@@ -53,6 +55,76 @@ export class DeliveryReservationService {
       (option.mode === "ASAP" ? assignment.asap_enabled : assignment.scheduled_enabled)) };
   }
 
+
+  // Shared by restoration and checkout; M9 remains the sole configuration,
+  // serviceability and native option/pricing authority.
+  private async resolveHeld(context: CartContext, hold: Hold) {
+    const location = discoveryInput.parse(hold.medusa_customer_address_id
+      ? { address_id: hold.medusa_customer_address_id }
+      : { latitude: Number(hold.latitude), longitude: Number(hold.longitude) });
+    const resolved = await this.resolve(context, location);
+    const option = resolved.options.find((candidate) => candidate.id === hold.delivery_option_id);
+    if (!option || option.revision !== hold.configuration_revision
+      || resolved.assignment.id !== hold.store_service_zone_id
+      || resolved.assignment.delivery_fee_minor !== hold.quoted_fee_minor) {
+      throw conflict("DELIVERY_SELECTION_STALE");
+    }
+    return { ...resolved, option };
+  }
+
+  // Caller already holds M8's customer lock. Keep M9 configuration and slot
+  // locks through native shipping and snapshot publication; never reacquire M8.
+  async withCheckoutReservation<T>(
+    context: CartContext,
+    addressId: string,
+    expectedRevision: number,
+    work: (data: {
+      trx: Knex.Transaction; hold: Hold; shippingOptionId: string;
+      assertFresh(): Promise<void>;
+    }) => Promise<T>,
+    frozen?: CheckoutSnapshot,
+  ): Promise<T> {
+    return this.configured(context, async (trx) => {
+      const hold = await activeHold(trx, context.id);
+      if (!hold || hold.status !== "HELD" || hold.deleted_at) throw conflict("DELIVERY_SELECTION_STALE");
+      const [slot] = await lockSlots(trx, [hold.delivery_slot_id]);
+      const assertFresh = async () => {
+        const now = await databaseTime(trx);
+        if (new Date(hold.expires_at) <= now || !slot?.enabled || slot.deleted_at
+          || new Date(slot.booking_cutoff_at) <= now) throw conflict("DELIVERY_SELECTION_STALE");
+      };
+      await assertFresh();
+      if (await selectionRevision(trx, context.id) !== expectedRevision) {
+        throw conflict("DELIVERY_SELECTION_STALE");
+      }
+      const discovery = new DiscoveryService(this.container, this.customerId);
+      const point = await discovery.point(discoveryInput.parse({ address_id: addressId }));
+      if (frozen) {
+        // The original configuration and native shipping price were validated
+        // before confirmation. Later tariffs cannot rewrite that frozen amount.
+        // Revalidate owned destination, geography, slot and option identity.
+        const eligible = await discovery.eligible(discoveryInput.parse({ address_id: addressId }));
+        await new SchedulingService(this.container).assertConfirmedOption(
+          context.merchant_store_id, point.latitude, point.longitude, hold.store_service_zone_id,
+          hold.delivery_option_id, frozen.shipping_option_id,
+        );
+        if (hold.id !== frozen.reservation_id || hold.configuration_revision !== frozen.configuration_revision
+          || hold.delivery_option_id !== frozen.delivery_option_id
+          || !eligible.some((store) => store.id === context.merchant_store_id)
+          || point.latitude !== Number(hold.latitude) || point.longitude !== Number(hold.longitude)
+          || hold.medusa_customer_address_id && hold.medusa_customer_address_id !== addressId) {
+          throw conflict("DELIVERY_SELECTION_STALE");
+        }
+        return work({ trx, hold, shippingOptionId: frozen.shipping_option_id, assertFresh });
+      }
+      const resolved = await this.resolveHeld(context, hold);
+      if (hold.medusa_customer_address_id && hold.medusa_customer_address_id !== addressId
+        || point.latitude !== resolved.point.latitude || point.longitude !== resolved.point.longitude
+        || !resolved.option.medusa_shipping_option_id) throw conflict("DELIVERY_SELECTION_STALE");
+      return work({ trx, hold, shippingOptionId: resolved.option.medusa_shipping_option_id, assertFresh });
+    });
+  }
+
   private eligible(slot: DeliveryWindow, policy: PolicyRow, now: Date) {
     return slot.enabled && !slot.deleted_at && new Date(slot.booking_cutoff_at) > now
       && new Date(slot.start_at).getTime() >= now.getTime() + policy.minimum_lead_minutes * 60000
@@ -67,7 +139,7 @@ export class DeliveryReservationService {
   private dto(hold: Hold | undefined, slot: DeliveryWindow | undefined, revision: number, state: string, timezone?: string) {
     return { state, revision, timezone: timezone ?? null, selection: hold && slot ? {
       id: hold.id, option_id: hold.delivery_option_id, slot_id: slot.id,
-      start_at: iso(slot.start_at), end_at: iso(slot.end_at), expires_at: iso(hold.expires_at),
+      start_at: iso(slot.start_at), end_at: iso(slot.end_at), expires_at: iso(effectiveExpiry(hold)),
       fee_minor: hold.quoted_fee_minor, currency_code: hold.currency_code,
     } : null };
   }
@@ -94,9 +166,15 @@ export class DeliveryReservationService {
     });
   }
 
+  private async assertSelectionMutable(contextId: string) {
+    const attempt = await currentCheckout(this.db, contextId);
+    if (attempt && (attempt.state === "PAYMENT_PENDING" || attempt.state === "RECOVERY_REQUIRED" || attempt.payment_accepted_at)) throw conflict("CHECKOUT_FROZEN");
+  }
+
   async select(value: unknown) {
     const input = schedulingInput(deliverySelectionInput, value);
     return this.carts.withCurrent(input.cart_id, async ({ cart, context, valid }) => {
+      await this.assertSelectionMutable(context.id);
       if (!valid || !cart.items?.length) throw conflict("DELIVERY_UNAVAILABLE");
       return this.configured(context, async (trx, policy) => {
         const resolved = await this.resolve(context, input.location);
@@ -156,25 +234,44 @@ export class DeliveryReservationService {
 
   async release(value: unknown) {
     const input = schedulingInput(deliveryReleaseInput, value);
-    return this.carts.withCurrent(input.cart_id, async ({ context }) => this.db.transaction(async (trx) => {
-      const old = await activeHold(trx, context.id);
-      if (input.reservation_id) {
-        const owned = await trx<Hold>("delivery_reservation").where({ id: input.reservation_id, cart_context_id: context.id }).first();
-        if (!owned) throw missing();
-        if (old && old.id !== owned.id) throw conflict("DELIVERY_SELECTION_STALE");
-      }
-      if (!old) return this.dto(undefined, undefined, await selectionRevision(trx, context.id), "unselected");
-      await lockSlots(trx, [old.delivery_slot_id]);
-      const now = await databaseTime(trx);
-      if (await selectionRevision(trx, context.id) !== input.expected_revision) throw conflict("DELIVERY_SELECTION_STALE");
-      await finishHold(trx, old, now, "CUSTOMER_RELEASED");
-      return this.dto(undefined, undefined, await selectionRevision(trx, context.id), "unselected");
-    }));
+    return this.carts.withCurrent(input.cart_id, async ({ context }) => {
+      await this.assertSelectionMutable(context.id);
+      return this.db.transaction(async (trx) => {
+        const old = await activeHold(trx, context.id);
+        if (input.reservation_id) {
+          const owned = await trx<Hold>("delivery_reservation").where({ id: input.reservation_id, cart_context_id: context.id }).first();
+          if (!owned) throw missing();
+          if (old && old.id !== owned.id) throw conflict("DELIVERY_SELECTION_STALE");
+        }
+        if (!old) return this.dto(undefined, undefined, await selectionRevision(trx, context.id), "unselected");
+        await lockSlots(trx, [old.delivery_slot_id]);
+        const now = await databaseTime(trx);
+        if (await selectionRevision(trx, context.id) !== input.expected_revision) throw conflict("DELIVERY_SELECTION_STALE");
+        await finishHold(trx, old, now, "CUSTOMER_RELEASED");
+        return this.dto(undefined, undefined, await selectionRevision(trx, context.id), "unselected");
+      });
+    });
   }
 
   async restore(value: unknown) {
     const input = schedulingInput(deliveryReadInput, value);
     return this.carts.withCurrent(input.cart_id, async ({ cart, context, valid }) => {
+      const checkout = await currentCheckout(this.db, context.id);
+      if (checkout && (checkout.state === "PAYMENT_PENDING" || checkout.state === "RECOVERY_REQUIRED")) {
+        return this.db.transaction(async (trx) => {
+          const pending = await activeHold(trx, context.id);
+          const slot = pending ? (await lockSlots(trx, [pending.delivery_slot_id]))[0] : undefined;
+          const now = await databaseTime(trx);
+          if (!pending || !slot) throw conflict("CHECKOUT_REFRESH_REQUIRED");
+          if (!pending.payment_accepted_at && effectiveExpiry(pending) <= now) {
+            await finishHold(trx, pending, now, "PAYMENT_DEADLINE");
+            await trx("checkout_attempt").where({ id: checkout.id, closed_at: null })
+              .update({ state: "EXPIRED", closed_at: now, updated_at: now });
+            return this.dto(undefined, undefined, await selectionRevision(trx, context.id), "expired");
+          }
+          return this.dto(pending, slot, await selectionRevision(trx, context.id), "held");
+        });
+      }
       const existing = await this.db<Hold>("delivery_reservation").where({ cart_context_id: context.id, status: "HELD" }).first();
       if (!existing) {
         return this.db.transaction(async (trx) => this.dto(undefined, undefined, await selectionRevision(trx, context.id), "unselected"));
@@ -191,12 +288,7 @@ export class DeliveryReservationService {
         else if (!valid || !cart.items?.length || !slot?.enabled || slot.deleted_at || new Date(slot.booking_cutoff_at) <= now) state = "unavailable";
         else {
           try {
-            const location = discoveryInput.parse(old.medusa_customer_address_id ? { address_id: old.medusa_customer_address_id }
-              : { latitude: Number(old.latitude), longitude: Number(old.longitude) });
-            const resolved = await this.resolve(context, location);
-            const option = resolved.options.find((candidate) => candidate.id === old.delivery_option_id);
-            if (!option || option.revision !== old.configuration_revision || resolved.assignment.id !== old.store_service_zone_id
-              || resolved.assignment.delivery_fee_minor !== old.quoted_fee_minor) state = "stale";
+            await this.resolveHeld(context, old);
           } catch (error) {
             if (!(error instanceof MedusaError) || ![MedusaError.Types.CONFLICT, MedusaError.Types.NOT_FOUND, MedusaError.Types.INVALID_DATA].includes(error.type)) throw error;
             state = "stale";

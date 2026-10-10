@@ -85,3 +85,13 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 .delivery-panel select { width: 100%; max-width: 42rem; padding: .75rem; }
 .delivery-panel button { margin-block: .5rem; }
 .delivery-hold { margin-block: 1rem; padding: 1rem; border-left: 4px solid #34704b; }
+
+.checkout-page { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+.checkout-columns { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
+.checkout-columns > section { padding: 1.25rem; border: 1px solid #ddd7ce; border-radius: 1rem; background: #fffdf8; }
+.checkout-columns address { font-style: normal; line-height: 1.6; }
+.checkout-columns select { display: block; width: 100%; margin: .5rem 0 1rem; padding: .75rem; }
+.checkout-columns button { display: block; margin-top: 1rem; }
+.checkout-totals dl { display: grid; grid-template-columns: 1fr auto; gap: .75rem; }
+.checkout-totals dd { margin: 0; text-align: right; }
+@media (min-width: 800px) { .checkout-columns { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: start; } }

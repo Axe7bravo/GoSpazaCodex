@@ -42,3 +42,12 @@ test("unknown post-entry and compensation failures remain uncertain", () => {
     assert.equal(result.body.code, "CART_MUTATION_UNCERTAIN");
   }
 });
+
+test("checkout freeze is a deliberate pre-mutation conflict, not an uncertain native write", () => {
+  const error = new MedusaError(MedusaError.Types.CONFLICT, "CHECKOUT_FROZEN");
+  for (const value of [error, serializeError(error)]) {
+    const result = cartMutationFailure(value, false);
+    assert.equal(result.status, 409);
+    assert.equal(result.body.code, "CHECKOUT_FROZEN");
+  }
+});

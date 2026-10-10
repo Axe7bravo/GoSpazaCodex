@@ -274,7 +274,7 @@ export class SchedulingService {
     if (minorPrice(native.amount) !== tariff || native.revision !== revision) throw schedulingConflict("DELIVERY_CONFIGURATION_STALE");
   }
   // Internal M9-C foundation only. No customer quote/selection route in M9-B.
-  async resolveAssignment(storeId: string, latitude: number, longitude: number) {
+  private async assignmentBasis(storeId: string, latitude: number, longitude: number) {
     schedulingInput(coordinates, { latitude, longitude });
     const eligible = await new LocationService(this.container).eligibleLocation(latitude, longitude);
     if (!eligible.store_ids.includes(storeId)) throw schedulingConflict("Store is not serviceable.");
@@ -292,6 +292,23 @@ export class SchedulingService {
     }
     const winner = resolveDeliveryAssignment(candidates);
     if (!winner || !(winner.asap_enabled || winner.scheduled_enabled)) throw schedulingConflict("Delivery is unavailable.");
+    return winner;
+  }
+
+  // Confirmation freezes commercial pricing, not geographic or enabled-state
+  // authority. Reuse the same assignment selection without repricing a snapshot.
+  async assertConfirmedOption(storeId: string, latitude: number, longitude: number,
+    assignmentId: string, optionId: string, nativeOptionId: string) {
+    const winner = await this.assignmentBasis(storeId, latitude, longitude);
+    const option = winner.options.find((candidate) => candidate.id === optionId);
+    if (winner.id !== assignmentId || !option?.enabled || option.medusa_shipping_option_id !== nativeOptionId
+      || !(option.mode === "ASAP" ? winner.asap_enabled : winner.scheduled_enabled)) {
+      throw schedulingConflict("DELIVERY_SELECTION_STALE");
+    }
+  }
+
+  async resolveAssignment(storeId: string, latitude: number, longitude: number) {
+    const winner = await this.assignmentBasis(storeId, latitude, longitude);
     for (const option of winner.options.filter((o) => o.enabled && (o.mode === "ASAP" ? winner.asap_enabled : winner.scheduled_enabled))) {
       if (!option.medusa_shipping_option_id) throw schedulingConflict("DELIVERY_CONFIGURATION_STALE");
       const native = await this.nativePrice(option.medusa_shipping_option_id);

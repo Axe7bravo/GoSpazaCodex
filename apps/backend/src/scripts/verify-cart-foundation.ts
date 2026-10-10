@@ -18,23 +18,24 @@ import { cleanupFixtureCommerce } from "./fixture-commerce-cleanup";
 import type { CartFoundation } from "@gospaza/contracts";
 import type { DiscoveryInput } from "../lib/discovery-service";
 
-function initializationDiagnostics(attempts: PromiseSettledResult<string>[]): string {
-  function describeError(error: unknown, depth = 0): object {
-    if (!(error instanceof Error)) {
-      return { message: typeof error === "string" ? error : "Non-Error rejection" };
-    }
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      ...("type" in error && typeof error.type === "string" ? { type: error.type } : {}),
-      ...("code" in error && typeof error.code === "string" ? { code: error.code } : {}),
-      ...(depth < 5 && error.cause !== undefined
-        ? { cause: describeError(error.cause, depth + 1) } : {}),
-      ...(depth < 5 && error instanceof AggregateError
-        ? { errors: error.errors.map((cause: unknown) => describeError(cause, depth + 1)) } : {}),
-    };
+function describeError(error: unknown, depth = 0): object {
+  if (!(error instanceof Error)) {
+    return { message: typeof error === "string" ? error : "Non-Error rejection" };
   }
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    ...("type" in error && typeof error.type === "string" ? { type: error.type } : {}),
+    ...("code" in error && typeof error.code === "string" ? { code: error.code } : {}),
+    ...(depth < 5 && error.cause !== undefined
+      ? { cause: describeError(error.cause, depth + 1) } : {}),
+    ...(depth < 5 && error instanceof AggregateError
+      ? { errors: error.errors.map((cause: unknown) => describeError(cause, depth + 1)) } : {}),
+  };
+}
+
+function initializationDiagnostics(attempts: PromiseSettledResult<string>[]): string {
   // M8-B initializes through internal services, not HTTP. Report both outcomes
   // without dumping containers, credentials, request headers or workflow inputs.
   return JSON.stringify(attempts.map((attempt, index) => ({
@@ -350,6 +351,13 @@ export default async function verifyCartFoundation(
     await keys.revoke(key.id, { revoked_by: prefix, revoke_in: 0 });
     await keys.deleteApiKeys(key.id);
   });
-  if (failures.length) throw new AggregateError(failures, "M8-B verification failed.");
+  if (failures.length) {
+    const failure = new AggregateError(failures, "M8-B verification failed.");
+    // Medusa's default inspection truncates nested AggregateError.errors to
+    // [Array]. Reuse the initialization formatter so extension assertions and
+    // cleanup causes remain visible without dumping fixtures or credentials.
+    console.error("Verification failure details: " + JSON.stringify(describeError(failure), null, 2));
+    throw failure;
+  }
   console.log("M8-B passed: binding constraints, concurrent lazy creation, restoration, ownership, native bypass and compensation.");
 }
