@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/Nolunga/medusa-payment-yoco.git",
+  "revision": "0513eda8db1adcf00bcf1806c436954ab9134f69",
+  "version": "1.2.0",
+  "license": "MIT",
+  "historicalRegressionReference": "019c3663a2208490cacbd272d2e8f3f289251624",
+  "medusaContract": "2.18.0",
+  "status": "Repository-owned maintained-fork source, conditionally registered in M10-D. Not published as an external package; production must pin the reviewed GoSpaza revision."
+}

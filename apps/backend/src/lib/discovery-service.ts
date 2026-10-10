@@ -32,11 +32,15 @@ export class DiscoveryService {
   constructor(private container: MedusaContainer, private customerId: string) {
     this.db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
   }
+  async ownedAddress(addressId: string) {
+    const [address] = await this.container.resolve<ICustomerModuleService>(Modules.CUSTOMER)
+      .listCustomerAddresses({ id: addressId, customer_id: this.customerId }, { take: 1 });
+    if (!address) throw new MedusaError(MedusaError.Types.NOT_FOUND, "Address unavailable.");
+    return address;
+  }
   async point(filters: DiscoveryInput) {
     if (!filters.address_id) return input(coordinates, { latitude: filters.latitude, longitude: filters.longitude });
-    const [address] = await this.container.resolve<ICustomerModuleService>(Modules.CUSTOMER)
-      .listCustomerAddresses({ id: filters.address_id, customer_id: this.customerId }, { take: 1 });
-    if (!address) throw new MedusaError(MedusaError.Types.NOT_FOUND, "Address unavailable.");
+    const address = await this.ownedAddress(filters.address_id);
     const location = await this.db<{ latitude: number; longitude: number }>("customer_address_location")
       .where({ medusa_customer_address_id: address.id }).whereNull("deleted_at").first();
     if (!location) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Choose an address with coordinates or use current location.");

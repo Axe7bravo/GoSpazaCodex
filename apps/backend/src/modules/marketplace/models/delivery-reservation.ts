@@ -8,8 +8,11 @@ export default model.define("delivery_reservation", {
   delivery_option_id: model.text(),
   store_service_zone_id: model.text(),
   delivery_slot_id: model.text(),
-  status: model.enum(["HELD", "RELEASED", "EXPIRED"]).default("HELD"),
+  status: model.enum(["HELD", "PAYMENT_PENDING", "RELEASED", "EXPIRED", "COMMITTED"]).default("HELD"),
   expires_at: model.dateTime(),
+  payment_deadline: model.dateTime().nullable(),
+  payment_accepted_at: model.dateTime().nullable(),
+  medusa_order_id: model.text().nullable(),
   released_at: model.dateTime().nullable(),
   release_reason: model.text().nullable(),
   configuration_revision: model.number(),
@@ -20,7 +23,11 @@ export default model.define("delivery_reservation", {
   latitude: model.float().nullable(),
   longitude: model.float().nullable(),
 }).indexes([
-  { on: ["cart_context_id"], unique: true, where: { status: "HELD" } },
+  { on: ["id", "cart_context_id"], unique: true },
+  // Migration20261004100000 owns delivery_one_held_per_cart: unique on
+  // cart_context_id WHERE status IN ('HELD', 'PAYMENT_PENDING'). DML 2.18
+  // does not support $in and adds soft-delete scoping to SQL predicates.
+  // Keep this exact all-row invariant in the migration; do not narrow it here.
   { on: ["delivery_slot_id", "status", "expires_at"] },
   { on: ["status", "expires_at"] },
 ]);

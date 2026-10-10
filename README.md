@@ -297,3 +297,19 @@ Platform-admin configuration, native shipping compatibility/backfill, revision s
 ## M9-C reservation backend
 
 Customer reservation APIs, capacity locking, M8 integration and user-run verification are documented in [M9-C reservations](docs/architecture/M9_C_RESERVATIONS.md). Implementation is awaiting verification; customer scheduling UI remains M9-D scope.
+
+## M10-D payment initiation
+
+The approved session-independent provider operation, payment-capacity commitment, retained native resources and ordered local verification are documented in [M10-D payment initiation](docs/M10_D_PAYMENT_INITIATION.md). Yoco registration is opt-in with YOCO_ENABLED=false by default. Use only the documented test configuration for this slice; webhook reconciliation, Orders, technical compensation and customer checkout UI remain later M10 work. No new dependencies are required.
+
+### M10-E payment reconciliation
+
+The dedicated Yoco webhook is `POST /hooks/gospaza/yoco`. Native payment hooks do not dispatch GoSpaza completion. See [M10-E reconciliation and verification](docs/M10_E_RECONCILIATION.md) for the durable recovery boundary, test-mode setup, and ordered verification commands. Keep `PAYMENT_RECONCILIATION_WORKER_ENABLED=true` for normal operation; its local test override must never be used in production.
+
+## M10-F customer checkout
+
+Customer checkout, authoritative return/status handling, environment setup and ordered user-run verification are documented in [M10-F customer checkout](docs/M10_F_CUSTOMER_CHECKOUT.md). M10-F verification is pending; M10-G and M11 are not included.
+
+## M10-G acceptance and security
+
+See [M10-G acceptance/security review](docs/M10_G_ACCEPTANCE_SECURITY.md) for the coverage matrix, production configuration correction, residual hardening risks and verification commands grouped by runtime environment. M10-A–F are user-verified; the new M10-G acceptance changes still require user verification. M11 is not included.

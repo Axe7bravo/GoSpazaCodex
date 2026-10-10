@@ -1,3 +1,4 @@
+import { blockNativePayments } from "../lib/checkout-http";
 import { blockNativeShipping } from "../lib/scheduling-http";
 import { blockNativeCarts } from "../lib/cart-http";
 import { guardEmailPassRegistration } from "../lib/registration-guard";
@@ -10,6 +11,11 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: "/hooks/gospaza/yoco", method: "POST", bodyParser: { preserveRawBody: true, sizeLimit: "64kb" } },
+    { matcher: /^\/store\/payment-collections(?:\/.*)?$/i, middlewares: [blockNativePayments] },
+    // A partial native Order is not a verified GoSpaza checkout outcome.
+    { matcher: /^\/store\/orders(?:\/.*)?$/i, middlewares: [blockNativePayments] },
+    { matcher: /^\/hooks\/payment(?:\/.*)?$/i, middlewares: [blockNativePayments] },
     { matcher: /^\/store\/shipping-options(?:\/.*)?$/i, middlewares: [blockNativeShipping] },
     { matcher: /^\/store\/carts(?:\/.*)?$/i, middlewares: [blockNativeCarts] },
     { matcher: "/merchant/products/:id/images", method: "POST", bodyParser: { sizeLimit: "8mb" } },

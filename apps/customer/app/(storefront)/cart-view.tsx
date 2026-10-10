@@ -78,7 +78,7 @@ export function CartView() {
     {cart.items.length > 0 && (busy ? <p role="status">Updating cart…</p> : <DeliveryPanel key={cart.id} cartId={cart.id} />)}
     <footer className="cart-summary">
       <span>Cart subtotal</span><strong>{money(cart.subtotal_minor)}</strong>
-      <p>Checkout is not available yet. Delivery quotes are shown separately.</p>
+      <Link href="/checkout">Review checkout</Link><p>Checkout verifies your address, delivery selection and final total.</p>
     </footer>
   </section>;
 }

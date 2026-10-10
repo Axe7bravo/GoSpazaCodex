@@ -1,3 +1,4 @@
+import { yocoConfiguration, reconciliationWorkerEnabled } from "./src/lib/yoco-config";
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { AUTH_METHODS } from "./src/lib/auth-config";
 import { privateFileConfig } from "./src/lib/private-file-config";
@@ -6,6 +7,8 @@ import { backendEnv } from "@gospaza/config/env";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 const env = backendEnv(process.env);
+const yoco = yocoConfiguration(process.env);
+reconciliationWorkerEnabled(process.env);
 invitationLifetimeMs(process.env); // Validate invitation expiry at startup.
 
 module.exports = defineConfig({
@@ -25,6 +28,9 @@ module.exports = defineConfig({
     },
   },
   modules: [
+    ...(yoco ? [{ resolve: "@medusajs/medusa/payment", options: {
+      providers: [{ resolve: "./src/modules/yoco", id: "yoco", options: { ...yoco } }],
+    } }] : []),
     { resolve: "./src/modules/marketplace" },
     privateFileConfig(process.env),
     { resolve: "@medusajs/medusa/fulfillment", options: {

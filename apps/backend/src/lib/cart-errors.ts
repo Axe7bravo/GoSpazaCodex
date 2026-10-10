@@ -14,7 +14,8 @@ export function cartMutationFailure(error: unknown, nativeMutationStarted: boole
       return { status: 404, body: { message: "Cart or product unavailable." } };
     }
     if (error.type === MedusaError.Types.CONFLICT) {
-      const code = error.message === "CART_MERCHANT_CONFLICT" ? "CART_MERCHANT_CONFLICT" : "CART_STATE_CONFLICT";
+      const code = error.message === "CART_MERCHANT_CONFLICT" ? "CART_MERCHANT_CONFLICT"
+        : error.message === "CHECKOUT_FROZEN" ? "CHECKOUT_FROZEN" : "CART_STATE_CONFLICT";
       return { status: 409, body: { code, message: code === "CART_MERCHANT_CONFLICT"
         ? "Your cart belongs to another store. Keep it or explicitly confirm a store switch."
         : "The cart cannot be changed in its current state." } };

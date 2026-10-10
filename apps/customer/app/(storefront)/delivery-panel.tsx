@@ -188,6 +188,6 @@ export function DeliveryPanel({ cartId }: { cartId: string }) {
             expected_revision: available.revision, expected_option_revision: option.revision });
         }}>Confirm delivery selection</button>
     </fieldset>}
-    <p className="muted">This reserves a delivery window only. Checkout is not available yet.</p>
+    <p className="muted">This reserves a delivery window only. Checkout verifies your final delivery and total.</p>
   </section>;
 }
