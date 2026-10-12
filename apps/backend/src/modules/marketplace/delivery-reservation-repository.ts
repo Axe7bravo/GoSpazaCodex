@@ -71,3 +71,29 @@ export async function finishHold(trx: Knex.Transaction, hold: Hold, now: Date, r
 }
 
 export const reservationId = () => "dhold_" + randomUUID();
+
+/**
+ * Internal scheduling boundary for M11 only. The caller holds merchant and
+ * OrderOperation locks and has written its rejection/audit in this transaction.
+ * Slot locks come before reservation writes, as in M9/M10. No customer or
+ * configuration lock is acquired: this only releases an immutable commitment.
+ */
+export async function releaseRejectedOrderCapacity(
+  trx: Knex.Transaction,
+  binding: { reservationId: string; orderId: string; storeId: string },
+  decidedAt: Date,
+) {
+  const initial = await trx<Hold>("delivery_reservation").where({
+    id: binding.reservationId, medusa_order_id: binding.orderId, merchant_store_id: binding.storeId,
+  }).whereNull("deleted_at").first();
+  if (!initial) throw new MedusaError(MedusaError.Types.CONFLICT, "Order capacity is unavailable.");
+  await lockSlots(trx, [initial.delivery_slot_id]);
+  const hold = await trx<Hold>("delivery_reservation").where({ id: initial.id }).forUpdate().first();
+  if (!hold || hold.status !== "COMMITTED" || hold.medusa_order_id !== binding.orderId) {
+    throw new MedusaError(MedusaError.Types.CONFLICT, "Order capacity is unavailable.");
+  }
+  await trx("delivery_reservation").where({ id: hold.id, status: "COMMITTED" }).update({
+    status: "RELEASED", released_at: decidedAt, release_reason: "ORDER_REJECTED",
+    selection_revision: hold.selection_revision + 1, updated_at: decidedAt,
+  });
+}

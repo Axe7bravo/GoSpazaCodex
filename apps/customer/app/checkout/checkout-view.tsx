@@ -229,6 +229,7 @@ function CheckoutContent({ returning }: { returning: boolean }) {
     </div>
     {status?.state === "succeeded" && status.order_id && <section aria-label="Order confirmation">
       <h2>Your Order</h2><p>Order reference: {status.order_id}</p><p>Keep this reference for your records.</p>
+      <Link href={"/orders/" + encodeURIComponent(status.order_id)}>View order status</Link>
     </section>}
     {!setup && !returning && status && ["failed", "expired", "abandoned", "refunded", "succeeded"].includes(status.state) &&
       <button type="button" disabled={disabled} onClick={() => actions.current?.setup()}>Review current cart</button>}
