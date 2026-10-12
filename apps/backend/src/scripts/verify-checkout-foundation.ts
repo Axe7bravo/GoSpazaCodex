@@ -59,7 +59,17 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
   let faultInstalled = false;
   async function http(cookie: string, method: string, route: string, body?: unknown) {
     const response = await request(route, cookie, method, body);
-    const data: unknown = await response.json();
+    const raw = await response.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(raw);
+    } catch (cause) {
+      throw new Error("Verification HTTP response is not valid JSON: " + JSON.stringify({
+        method, path: route, response_url: response.url, redirected: response.redirected,
+        status: response.status, content_type: response.headers.get("content-type"),
+        raw_body: raw.slice(0, 2048), body_truncated: raw.length > 2048,
+      }), { cause });
+    }
     return { status: response.status, body: data };
   }
   const expect = (result: { status: number; body: unknown }, status = 200) => {

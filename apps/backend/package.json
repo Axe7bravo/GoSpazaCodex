@@ -27,7 +27,9 @@
     "test:delivery-reservations": "medusa exec ./src/scripts/verify-delivery-reservations.ts",
     "test:checkout-foundation": "medusa exec ./src/scripts/verify-checkout-foundation.ts",
     "test:payment-initiation": "medusa exec ./src/scripts/verify-payment-initiation.ts",
-    "test:payment-reconciliation": "medusa exec ./src/scripts/verify-payment-reconciliation.ts"
+    "test:payment-reconciliation": "medusa exec ./src/scripts/verify-payment-reconciliation.ts",
+    "test:order-operations": "medusa exec ./src/scripts/verify-order-operations.ts",
+    "test:order-decisions": "medusa exec ./src/scripts/verify-order-decisions.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

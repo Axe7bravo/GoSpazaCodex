@@ -44,3 +44,15 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 .application-content input[type="checkbox"] { width: auto; align-self: start; }
 .application-content button[type="submit"] { background: var(--gs-orange, #ff7a1a); border-color: #24211d; font-weight: 700; }
 @media (max-width: 640px) { .catalogue-variants fieldset { grid-template-columns: 1fr; } .merchant-portal nav { flex-wrap: wrap; } }
+
+/* M11 order projections share responsive presentation, not operational state. */
+.order-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; margin-block: 1.5rem; }
+.order-items { list-style: none; padding: 0; }
+.order-items li { display: grid; gap: .35rem; padding: 1rem 0; border-bottom: 1px solid #ddd4c8; }
+.order-page { min-width: 0; }
+.order-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-block: 1rem; }
+.order-secondary { background: transparent; color: #342b24; border: 1px solid currentColor; }
+.order-page textarea { display: block; width: 100%; min-height: 7rem; }
+@media (min-width: 800px) { .order-columns { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+
+.merchant-portal .order-actions button:not(.order-secondary) { background: var(--gs-orange, #ff7a1a); border-color: #24211d; font-weight: 700; }

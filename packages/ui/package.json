@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.tsx",
     "./tokens.css": "./src/tokens.css",
-    "./auth": "./src/auth.tsx"
+    "./auth": "./src/auth.tsx",
+    "./orders": "./src/orders.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

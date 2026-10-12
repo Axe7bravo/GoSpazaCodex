@@ -7,7 +7,7 @@ import type { Link } from "@medusajs/framework/modules-sdk";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { completeCartWorkflow } from "@medusajs/medusa/core-flows";
 import { withCheckoutVerification } from "./verify-checkout-foundation";
-import type { CheckoutVerificationCustomer } from "./verify-checkout-foundation";
+import type { CheckoutVerificationCustomer, CheckoutVerificationFixture } from "./verify-checkout-foundation";
 import { inspectCompletion } from "../lib/completion-native";
 import { CartFoundationService } from "../lib/cart-service";
 import { PaymentInitiationService } from "../lib/payment-initiation-service";
@@ -29,7 +29,12 @@ import RegisteredYocoPaymentService from "../modules/yoco/registered-service";
 const prepared = z.object({ quote: z.object({ checkout_revision: z.string() }) });
 const confirmed = prepared.extend({ attempt: z.object({ id: z.string() }) });
 
-export default async function verifyPaymentReconciliation(args: ExecArgs) {
+export interface ReconciledOrderFixture extends CheckoutVerificationFixture {
+  complete(suffix: string, variantId?: string): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
+  recovery: { customerId: string; completionId: string };
+}
+
+export default async function verifyPaymentReconciliation(args: ExecArgs, extension?: (fixture: ReconciledOrderFixture) => Promise<void>) {
   const loadedConfig = yocoConfiguration(process.env);
   if (!loadedConfig || !loadedConfig.secretKey.startsWith("sk_test_") || !["development", "test"].includes(process.env.APP_ENV ?? "")) {
     throw new Error("M10-E verification requires local test-mode Yoco configuration.");
@@ -77,7 +82,8 @@ export default async function verifyPaymentReconciliation(args: ExecArgs) {
     return Response.json(receipt);
   };
   try {
-    await withCheckoutVerification(args, async ({ fixture, customer, http, expect }) => {
+    await withCheckoutVerification(args, async (checkoutFixture) => {
+      const { fixture, customer, http, expect } = checkoutFixture;
       const { container } = fixture;
       const db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
       const payments = container.resolve<IPaymentModuleService>(Modules.PAYMENT);
@@ -366,6 +372,22 @@ export default async function verifyPaymentReconciliation(args: ExecArgs) {
         assert.equal([...sent.keys()].filter((key) => !key.includes("tcomp_")).length, payableCheckouts);
         assert.equal(refundPosts.filter((post) => post.key === uncertainRefund.idempotency_key).length, 1, "one external refund business effect despite replay");
 
+        if (extension) {
+          await extension({ ...checkoutFixture,
+            recovery: { customerId: hostile.id, completionId: ambiguous.id },
+            async complete(suffix, variantId) {
+              const person = await customer(suffix, variantId);
+              const input = await prepare(person);
+              const op = await operation(input.attempt_id);
+              await apply(event(op));
+              await service.reconcile(op.id);
+              const completion = await db<CompletionRow>("checkout_completion").where({ checkout_attempt_id: input.attempt_id }).first();
+              assert.equal(completion?.state, "SUCCEEDED");
+              assert.ok(completion?.order_id);
+              return { person, orderId: completion.order_id, attemptId: input.attempt_id };
+            },
+          });
+        }
       } catch (error) { failures.push(error); }
 
       // Known fixture IDs only; native cleanup uses public module/link APIs.
@@ -401,7 +423,12 @@ export default async function verifyPaymentReconciliation(args: ExecArgs) {
       }
       try {
         await db.transaction(async (trx) => {
+          // Drain in-flight M11 ensures before deleting only these fixture receipts.
+          await trx("merchant").whereIn("id", [fixture.first.merchantId, fixture.second.merchantId]).orderBy("id").forUpdate().select("id");
           await trx("yoco_inbox").whereIn("event_id", eventIds).delete();
+          await trx("order_decision_event").whereIn("order_operation_id", trx("order_operation").select("id")
+            .whereIn("checkout_completion_id", trx("checkout_completion").select("id").whereIn("checkout_attempt_id", attempts))).delete();
+          await trx("order_operation").whereIn("checkout_completion_id", trx("checkout_completion").select("id").whereIn("checkout_attempt_id", attempts)).delete();
           await trx("checkout_completion").whereIn("checkout_attempt_id", attempts).delete();
           await trx("technical_compensation").whereIn("operation_id", rows.map((row) => row.id)).delete();
           await trx("provider_session").whereIn("operation_id", rows.map((row) => row.id)).delete();

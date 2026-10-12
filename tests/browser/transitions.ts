@@ -18,15 +18,18 @@ export async function transition(
 ): Promise<void> {
   await test.step("Complete " + (expected.url ?? expected.responses.map((item) => item.path).join(", ")), async () => {
     const responses = expected.responses.map(async (item) => {
-      const response = await page.waitForResponse((candidate) => {
+      const label = item.method + " " + item.path + " " + JSON.stringify(item.query ?? {});
+      const response = await test.step("Observe response: " + label, () => page.waitForResponse((candidate) => {
         const url = new URL(candidate.url());
         return url.origin === "http://localhost:9000"
           && url.pathname === item.path
           && candidate.request().method() === item.method
           && Object.entries(item.query ?? {}).every(([key, value]) => url.searchParams.get(key) === value);
-      });
+      }));
       expect(response.status(), item.method + " " + item.path).toBe(item.status ?? 200);
-      expect(await response.finished(), "Response must finish: " + item.path).toBeNull();
+      await test.step("Finish response body: " + label + " (" + response.status() + ")", async () => {
+        expect(await response.finished(), "Response must finish: " + item.path).toBeNull();
+      });
     });
     await Promise.all([
       ...responses,
