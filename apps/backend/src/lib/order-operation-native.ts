@@ -54,8 +54,7 @@ export function merchantOrderDTO(order: OrderDTO, operation: OrderOperationRow, 
     rejection_reason: operation.rejection_reason,
     customer: { first_name: order.shipping_address.first_name ?? "", last_name: order.shipping_address.last_name ?? "", city: order.shipping_address.city ?? "" },
     items: order.items.map((item) => {
-      const quantity = Number(item.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity <= 0) throw orderUnavailable();
+      const quantity = nativeOrderQuantity(item.quantity);
       return { id: item.id, title: item.title, variant_title: item.variant_title ?? null, sku: item.variant_sku ?? null,
         quantity, unit_price_minor: checkoutMoney(item.unit_price), total_minor: checkoutMoney(item.total) };
     }),
@@ -65,4 +64,11 @@ export function merchantOrderDTO(order: OrderDTO, operation: OrderOperationRow, 
     pickup: { store_name: delivery.name, address_line_1: delivery.address_line_1, address_line_2: delivery.address_line_2,
       city: delivery.city, province: delivery.province, postal_code: delivery.postal_code, country_code: delivery.country_code },
   };
+}
+
+// Native BigNumber/number representation; client input uses strict schemas instead.
+export function nativeOrderQuantity(value: unknown): number {
+  const quantity = Number(value);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw orderUnavailable();
+  return quantity;
 }
