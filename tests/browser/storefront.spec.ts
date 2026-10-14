@@ -76,6 +76,28 @@ test.beforeAll(async ({ request }) => {
     await response.dispose();
   }
 });
+// Document requests above do not prepare the App Router navigation/chunk path.
+// The regression trace spent 14s on store RSC and 6s on product RSC before the
+// correctly location-scoped product GET could finish. Warm those real routes in
+// an isolated context; no session, location or mock state enters a journey.
+test.beforeAll(async ({ browser }) => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await mock(page);
+    await page.goto(base + "/stores");
+    await page.getByRole("button", { name: "Choose saved address", exact: true }).click();
+    await page.getByRole("combobox", { name: "Saved address", exact: true }).selectOption("cuaddr_fixture");
+    await page.getByRole("link", { name: stores[0]!.name, exact: true }).click();
+    await page.waitForURL(base + "/stores/mstore_first");
+    await page.getByRole("link", { name: product.title, exact: true }).click();
+    await page.waitForURL(base + "/products/prod_tomatoes");
+    await expect(page.getByRole("heading", { name: product.title, exact: true })).toBeVisible();
+    await expect(page.locator(".variant-list")).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
 async function currentLocation(page: Page) {
   await page.getByRole("button", { name: "Use current location", exact: true }).click();
 }

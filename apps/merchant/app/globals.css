@@ -56,3 +56,17 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 @media (min-width: 800px) { .order-columns { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
 
 .merchant-portal .order-actions button:not(.order-secondary) { background: var(--gs-orange, #ff7a1a); border-color: #24211d; font-weight: 700; }
+
+/* M12: store-floor picking, with no commercial controls. */
+.picking-page { min-width: 0; }
+.picking-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.picking-cards, .picking-lines { display: grid; gap: 1rem; margin-block: 1.5rem; }
+.picking-card { padding: 1.25rem; border: 1px solid #d8d0c3; border-radius: .75rem; background: #fffdf8; overflow-wrap: anywhere; }
+.picking-counts { display: flex; flex-wrap: wrap; gap: 2rem; }
+.picking-counts dt { color: var(--gs-muted); }
+.picking-counts dd { margin: .25rem 0; font-size: 1.4rem; font-weight: 700; }
+.picking-page button, .picking-page input, .picking-page select { min-height: 48px; }
+.picking-page input[type="checkbox"] { min-width: 24px; min-height: 24px; }
+.merchant-portal .picking-primary { background: var(--gs-orange, #ff7a1a); color: #24211d; font-weight: 700; }
+.picking-page fieldset { min-width: 0; }
+@media (min-width: 800px) { .picking-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .picking-lines { max-width: 52rem; } }
