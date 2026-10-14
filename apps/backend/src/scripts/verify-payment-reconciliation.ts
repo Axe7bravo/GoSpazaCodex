@@ -93,6 +93,25 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
       const service = new PaymentReconciliationService(container);
       const attempts: string[] = [], eventIds: string[] = [], people: string[] = [];
       const failures: unknown[] = [];
+      async function concurrent(scenario: string, tasks: (() => Promise<unknown>)[]) {
+        const started = Date.now();
+        const durations: number[] = [];
+        const outcomes = await Promise.allSettled(tasks.map(async (task, index) => {
+          try { return await task(); }
+          finally { durations[index] = Date.now() - started; }
+        }));
+        const errors: Error[] = [];
+        outcomes.forEach((outcome, index) => {
+          if (outcome.status === "rejected") errors.push(new Error(
+            scenario + " participant " + (index + 1) + " failed after " + durations[index] + "ms",
+            { cause: outcome.reason },
+          ));
+        });
+        if (errors.length) throw new AggregateError(errors, "Reconciliation concurrency: " + scenario
+          + "; outcomes=" + JSON.stringify(outcomes.map((outcome, index) => ({
+            participant: index + 1, status: outcome.status, duration_ms: durations[index],
+          }))));
+      }
       async function prepare(person: CheckoutVerificationCustomer, initiate = true) {
         people.push(person.id);
         const quote = prepared.parse(expect(await http(person.cookie, "POST", "/store/gospaza/checkout/prepare", person.input)));
@@ -137,6 +156,16 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         await establishPaymentCollection(container, row, person.cartId);
         return { person, input, row };
       }
+      async function expectWebhookStatus(response: Response, expected: number, scenario: string) {
+        const raw = await response.text();
+        const safeBody = raw.replaceAll(config.secretKey, "[redacted]")
+          .replaceAll(config.webhookSecret, "[redacted]").slice(0, 2000);
+        assert.equal(response.status, expected, JSON.stringify({
+          scenario, method: "POST", url: new URL("/hooks/gospaza/yoco", base).href,
+          expected_status: expected, response_status: response.status,
+          content_type: response.headers.get("content-type"), response_body: safeBody,
+        }));
+      }
       async function customerStatus(cookie: string, attemptId: string) {
         const result = expect(await http(cookie, "GET", "/store/gospaza/checkout/status?attempt_id=" + encodeURIComponent(attemptId)));
         const parsed = z.object({ state: z.string(), order_id: z.string().nullable(),
@@ -152,7 +181,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         const success = event(op), payload = signed(success);
         const invalid = await originalFetch(new URL("/hooks/gospaza/yoco", base), { method: "POST",
           headers: { "Content-Type": "application/json", ...payload.headers }, body: "{}" });
-        assert.equal(invalid.status, 400);
+        await expectWebhookStatus(invalid, 400, "tampered body with original signature");
         assert.equal((await db("yoco_inbox").where({ event_id: success.id })).length, 0);
         // Real HTTP ingress: rejected payloads must not become durable evidence.
         const stale = signed(success, String(Math.floor(Date.now() / 1000) - 181));
@@ -165,18 +194,17 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
           const rejected = await originalFetch(new URL("/hooks/gospaza/yoco", base), {
             method: "POST", headers: { "Content-Type": "application/json", ...hostile.headers }, body: hostile.raw,
           });
-          assert.equal(rejected.status, hostile.status);
-          await rejected.text();
+          await expectWebhookStatus(rejected, hostile.status, "hostile webhook rejection");
           assert.equal((await db("yoco_inbox").where({ event_id: success.id })).length, 0);
         }
         const received = await originalFetch(new URL("/hooks/gospaza/yoco", base), { method: "POST",
           headers: { "Content-Type": "application/json", ...payload.headers }, body: payload.rawData });
-        assert.equal(received.status, 200);
-        await Promise.all([service.receive(payload), service.receive(payload)]);
+        await expectWebhookStatus(received, 200, "valid signed webhook receipt");
+        await concurrent("duplicate inbox receipt", [() => service.receive(payload), () => service.receive(payload)]);
         const inbox = await db<InboxRow>("yoco_inbox").where({ event_id: success.id }).first(); assert.ok(inbox);
         assert.equal((await db("yoco_inbox").where({ event_id: success.id })).length, 1);
         await assert.rejects(() => db("yoco_inbox").where({ id: inbox.id }).update({ event: {} }));
-        await Promise.all([service.applyInbox(inbox.id), service.applyInbox(inbox.id)]);
+        await concurrent("duplicate inbox application", [() => service.applyInbox(inbox.id), () => service.applyInbox(inbox.id)]);
         const accepted = await db<Attempt>("checkout_attempt").where({ id: input.attempt_id }).first(); assert.ok(accepted?.payment_accepted_at);
         // Simulate the exact process-loss boundary: claim and run once, omit the
         // GoSpaza terminal write. Reconciliation must inspect, never run again.
@@ -192,7 +220,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         expect(await http(a.cookie, "GET", "/store/orders"), 404);
         const observed = await inspectCompletion(container, designated);
         assert.ok(observed, "the designated execution must be readable before reconciliation");
-        await Promise.all([service.reconcile(op.id), service.reconcile(op.id)]);
+        await concurrent("terminal completion readback", [() => service.reconcile(op.id), () => service.reconcile(op.id)]);
         const completion = await db<CompletionRow>("checkout_completion").where({ id: designated.id }).first();
         assert.equal(completion?.state, "SUCCEEDED", JSON.stringify(completion));
         assert.ok(Array.isArray(completion.unresolved), "unresolved must persist as a JSON array, including when empty");
@@ -213,7 +241,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         // Normal worker path, including simultaneous first reconciliation.
         const normal = await customer("reconcile-worker"), normalInput = await prepare(normal), normalOp = await operation(normalInput.attempt_id);
         await apply(event(normalOp));
-        await Promise.all([service.reconcile(normalOp.id), service.reconcile(normalOp.id)]);
+        await concurrent("first native completion", [() => service.reconcile(normalOp.id), () => service.reconcile(normalOp.id)]);
         const normalCompletion = await db<CompletionRow>("checkout_completion").where({ operation_id: normalOp.id }).first();
         assert.equal(normalCompletion?.state, "SUCCEEDED", JSON.stringify(normalCompletion));
         assert.ok(normalCompletion);
@@ -248,11 +276,11 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         const postsAfterLostResponse = checkoutPosts;
         const earlyAttempt = await db<Attempt>("checkout_attempt").where({ id: earlyInput.attempt_id }).first();
         assert.ok(earlyAttempt);
-        await Promise.all([
-          service.applyInbox(earlyMessage.id), service.applyInbox(earlyMessage.id),
-          cartOperation(container, early.id, () => currentCheckout(db, earlyAttempt.cart_context_id)),
+        await concurrent("webhook versus current checkout", [
+          () => service.applyInbox(earlyMessage.id), () => service.applyInbox(earlyMessage.id),
+          () => cartOperation(container, early.id, () => currentCheckout(db, earlyAttempt.cart_context_id)),
         ]);
-        await Promise.all([service.reconcile(earlyOperation.id), service.reconcile(earlyOperation.id)]);
+        await concurrent("lost initiation recovery", [() => service.reconcile(earlyOperation.id), () => service.reconcile(earlyOperation.id)]);
         assert.equal(checkoutPosts, postsAfterLostResponse, "verified evidence recovery must not POST another checkout");
         assert.equal((await db<Attempt>("checkout_attempt").where({ id: earlyInput.attempt_id }).first())?.state, "COMPLETED");
         assert.equal((await orders.listOrders({ customer_id: early.id }, { take: null })).length, 1);
@@ -303,7 +331,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         const ambiguous = await designateCompletion(db, recoveryAttempt, hostileOp.id);
         assert.ok(await claimCompletion(db, ambiguous.id));
         const postsBefore = sent.size;
-        await Promise.all([service.reconcile(hostileOp.id), service.reconcile(hostileOp.id)]);
+        await concurrent("missing execution recovery", [() => service.reconcile(hostileOp.id), () => service.reconcile(hostileOp.id)]);
         assert.equal((await db<Attempt>("checkout_attempt").where({ id: hostileInput.attempt_id }).first())?.state, "RECOVERY_REQUIRED");
         assert.equal((await engine.listWorkflowExecutions({ workflow_id: "complete-cart", transaction_id: ambiguous.transaction_id })).length, 0);
         assert.equal((await new PaymentInitiationService(container, hostile.id).initiate(hostileInput, true)).state, "reconciliation_required");

@@ -199,7 +199,22 @@ test("member deactivation removes an already open portal on focus", async ({ pag
   await page.goto(base + "/merchant/team");
   await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
   state.active = false;
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  // Revocation removes protected content before the asynchronous Next redirect.
+  // Observe both boundaries; click/focus completion is not navigation completion.
+  await Promise.all([
+    page.waitForURL(base + "/application"),
+    (async () => {
+      const revoked = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.origin === "http://localhost:9000" && url.pathname === "/merchant/me"
+          && response.request().method() === "GET" && response.status() === 401;
+      });
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await revoked;
+      await expect(page.getByRole("heading", { name: "Merchant team", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Members", exact: true })).toHaveCount(0);
+    })(),
+  ]);
   await expect(page).toHaveURL(base + "/application");
   await expect(page.getByRole("heading", { name: "Merchant team", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start application", exact: true })).toBeVisible();

@@ -19,3 +19,5 @@ export * from "./delivery";
 export * from "./checkout";
 
 export * from "./orders";
+
+export * from "./picking";

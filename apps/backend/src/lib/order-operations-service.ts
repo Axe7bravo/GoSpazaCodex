@@ -1,3 +1,4 @@
+import { withMerchantAuthorization } from "../modules/marketplace/merchant-authorization";
 import { randomUUID } from "node:crypto";
 import type { MerchantOrderDecision } from "@gospaza/contracts";
 import type { OrderDecisionAction } from "../modules/marketplace/order-operation-policy";
@@ -10,7 +11,7 @@ import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/frame
 import { z } from "@medusajs/framework/zod";
 import type { CustomerOrder, MerchantOrderList } from "@gospaza/contracts";
 import type MarketplaceService from "../modules/marketplace/service";
-import { requireCapability, resourceId } from "../modules/marketplace/team-policy";
+import { resourceId } from "../modules/marketplace/team-policy";
 import { completedOrderHandoff, orderListInput, orderParse, orderUnavailable } from "../modules/marketplace/order-operation-policy";
 import type { CompletedOrderHandoff } from "../modules/marketplace/order-operation-policy";
 import { completedOrderCandidates, insertOrderOperation, readOrderHandoff, selectHandoff } from "../modules/marketplace/order-operation-repository";
@@ -42,16 +43,9 @@ export class OrderOperationsService {
     });
   }
   private async authorized<T>(identity: string, work: (trx: Knex.Transaction, tenant: Awaited<ReturnType<MarketplaceService["resolveTenant"]>>) => Promise<T>, capability: Capability = "MERCHANT_ORDER_VIEW") {
-    const marketplace = this.container.resolve<MarketplaceService>("marketplace");
-    const initial = await marketplace.resolveTenant(identity);
-    return this.db.transaction(async (trx) => {
-      await trx("merchant").where({ id: initial.merchant.id }).forUpdate().first();
-      const tenant = await marketplace.resolveTenant(identity, trx);
-      if (tenant.merchant.id !== initial.merchant.id) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Merchant context changed.");
-      requireCapability(tenant.membership.member_type, capability);
-      return work(trx, tenant);
-    });
+    return withMerchantAuthorization(this.db, this.container.resolve<MarketplaceService>("marketplace"), identity, capability, work);
   }
+
   private async projection(trx: Knex.Transaction, handoff: CompletedOrderHandoff) {
     const { order, operation } = await this.materialize(trx, handoff);
     const delivery = await trx<OperationalDelivery>("delivery_slot as slot")
