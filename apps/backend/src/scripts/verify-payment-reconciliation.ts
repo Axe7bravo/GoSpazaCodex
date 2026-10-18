@@ -30,7 +30,7 @@ const prepared = z.object({ quote: z.object({ checkout_revision: z.string() }) }
 const confirmed = prepared.extend({ attempt: z.object({ id: z.string() }) });
 
 export interface ReconciledOrderFixture extends CheckoutVerificationFixture {
-  complete(suffix: string, variantId?: string): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
+  complete(suffix: string, variantId?: string, quantity?: number): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
   recovery: { customerId: string; completionId: string };
 }
 
@@ -403,8 +403,8 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         if (extension) {
           await extension({ ...checkoutFixture,
             recovery: { customerId: hostile.id, completionId: ambiguous.id },
-            async complete(suffix, variantId) {
-              const person = await customer(suffix, variantId);
+            async complete(suffix, variantId, quantity) {
+              const person = await customer(suffix, variantId, quantity);
               const input = await prepare(person);
               const op = await operation(input.attempt_id);
               await apply(event(op));

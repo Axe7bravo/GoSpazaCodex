@@ -53,6 +53,9 @@ async function mock(page: Page, role: MerchantMemberRole = "PICKER") {
       const filtered = orders.filter((order) => !url.searchParams.get("status") || order.status === url.searchParams.get("status"));
       await reply({ orders: filtered.slice(offset, offset + limit), limit, offset, count: filtered.length }); return;
     }
+    if (url.pathname === path + "/shortages" && method === "GET") {
+      await reply({ preference: { preference: "CONTACT_ME", revision: 0, chosen_at: null, frozen_at: null }, shortages: [] }); return;
+    }
     if (url.pathname === path && method === "GET") { await reply({ picking: state.order }); return; }
     if (url.pathname.startsWith(path + "/") && ["POST", "PUT"].includes(method)) {
       const body: Record<string, unknown> = request.postDataJSON();

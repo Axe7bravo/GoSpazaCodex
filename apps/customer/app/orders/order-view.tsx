@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import ShortagePanel from "./shortage-panel";
 import { useEffect, useRef, useState } from "react";
 import type { CustomerOrder, OrderOperationStatus } from "@gospaza/contracts";
 import { createCustomerOrderClient, OrderError } from "@gospaza/api-client";
@@ -54,6 +55,7 @@ function Content({ id }: { id: string }) {
       <p>{copy[order.operational_status]}</p>
       <p>{order.store.name} · Placed {orderTime(order.created_at)}</p>
       <OrderSummary order={order} />
+      {order.operational_status !== "REJECTED" && <ShortagePanel key={order.id} order={order} />}
     </>}
   </section>;
 }

@@ -64,7 +64,7 @@ export class OrderOperationsService {
       return this.projection(trx, handoff);
     });
   }
-  async customerDetail(customerId: string, orderId: string): Promise<CustomerOrder> {
+  async withCustomerOrder<T>(customerId: string, orderId: string, work: (trx: Knex.Transaction, handoff: CompletedOrderHandoff) => Promise<T>): Promise<T> {
     orderParse(resourceId, orderId);
     // Scope the native lookup before reading/provisioning operational evidence.
     const native = this.container.resolve<IOrderModuleService>(Modules.ORDER);
@@ -76,7 +76,12 @@ export class OrderOperationsService {
       await trx("merchant").where({ id: initial.merchant_id }).forUpdate().first();
       const handoff = await readOrderHandoff(trx, orderId);
       if (!handoff || handoff.snapshot.customer_id !== customerId || handoff.merchant_id !== initial.merchant_id) throw missing();
-      // Existing native readback also validates native customer against this snapshot.
+      await readOperationalOrder(this.container, handoff);
+      return work(trx, handoff);
+    });
+  }
+  async customerDetail(customerId: string, orderId: string): Promise<CustomerOrder> {
+    return this.withCustomerOrder(customerId, orderId, async (trx, handoff) => {
       const order = await this.projection(trx, handoff);
       return {
         id: order.id, display_id: order.display_id, created_at: order.created_at,

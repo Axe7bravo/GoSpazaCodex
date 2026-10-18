@@ -1,4 +1,4 @@
-import type { PickingList, PickingOrder, PickingResult, PickingStatus, PickingLineInput, PickingReassignInput, PickingCompleteInput } from "@gospaza/contracts";
+import type { OrderShortages, PickingList, PickingOrder, PickingResult, PickingStatus, PickingLineInput, PickingReassignInput, PickingCompleteInput } from "@gospaza/contracts";
 
 export class PickingError extends Error {
   constructor(public readonly status: number) {
@@ -36,6 +36,7 @@ export function createPickingClient(baseUrl: string, fetcher: typeof fetch = fet
       return request<PickingList>("/merchant/picking?" + query);
     },
     detail: (id: string) => request<{ picking: PickingOrder }>(path(id)),
+    shortages: (id: string) => request<OrderShortages>(path(id) + "/shortages"),
     claim: (id: string) => request<PickingResult>(path(id) + "/claim", "POST", {}),
     updateLine: (id: string, lineId: string, input: PickingLineInput) => request<PickingResult>(path(id) + "/lines/" + encodeURIComponent(lineId), "PUT", {
       expected_revision: input.expected_revision, picked_quantity: input.picked_quantity, shortage_recorded: input.shortage_recorded,

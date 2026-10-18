@@ -38,7 +38,7 @@ export interface CheckoutVerificationCustomer {
 export interface CheckoutVerificationFixture {
   prefix: string;
   fixture: CartVerificationFixture;
-  customer(suffix: string, variantId?: string): Promise<CheckoutVerificationCustomer>;
+  customer(suffix: string, variantId?: string, quantity?: number): Promise<CheckoutVerificationCustomer>;
   http(cookie: string, method: string, route: string, body?: unknown): Promise<{ status: number; body: unknown }>;
   expect(result: { status: number; body: unknown }, status?: number): unknown;
 }
@@ -96,10 +96,10 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
         booking_cutoff_at: new Date(now.getTime() + 82800000).toISOString(), capacity: 30, enabled: true,
       }, prefix, reason);
     }
-    async function customer(suffix: string, variantId = first.variantId) {
+    async function customer(suffix: string, variantId = first.variantId, quantity = 1) {
       const person = await fixture.createCustomer(prefix + suffix);
       const cart = z.object({ cart_id: z.string() }).parse(expect(await http(person.cookie, "POST",
-        "/store/gospaza/cart/items", { variant_id: variantId, quantity: 1, location })));
+        "/store/gospaza/cart/items", { variant_id: variantId, quantity, location })));
       const point = z.object({ latitude: z.number(), longitude: z.number() }).parse(location);
       expect(await http(person.cookie, "POST", "/store/gospaza/addresses", {
         first_name: "Fixture", last_name: "Customer", address_1: "1 Fixture Street", address_2: "",

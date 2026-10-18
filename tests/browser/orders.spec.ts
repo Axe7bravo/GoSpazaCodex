@@ -117,6 +117,9 @@ async function mock(page: Page, role: MerchantMemberRole = "OWNER") {
       const { id, operational_status, revision, accepted_at, rejected_at, rejection_reason } = state.order;
       await reply({ decision: { id, operational_status, revision, accepted_at, rejected_at, rejection_reason } }); return;
     }
+    if (url.pathname === "/store/gospaza/orders/order_fixture/shortages") {
+      await reply({ preference: { preference: "CONTACT_ME", revision: 0, chosen_at: null, frozen_at: null }, shortages: [] }); return;
+    }
     if (url.pathname === "/store/gospaza/orders/order_fixture") {
       const { id, display_id, created_at, operational_status, currency_code, items, totals, delivery } = state.order;
       const order: CustomerOrder = { id, display_id, created_at, operational_status, currency_code, items, totals, delivery, store: { name: "Fixture Shop" } };

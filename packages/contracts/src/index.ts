@@ -21,3 +21,5 @@ export * from "./checkout";
 export * from "./orders";
 
 export * from "./picking";
+
+export * from "./shortages";
