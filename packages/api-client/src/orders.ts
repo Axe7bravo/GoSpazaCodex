@@ -1,4 +1,4 @@
-import type { CustomerOrder, MerchantOrder, MerchantOrderDecision, MerchantOrderList,
+import type { OrderShortages, ShortagePreference, ShortageResolution, ShortagePreferenceInput, ShortageOmissionInput, CustomerOrder, MerchantOrder, MerchantOrderDecision, MerchantOrderList,
   OrderDecisionInput, OrderListInput, OrderRejectInput } from "@gospaza/contracts";
 
 export class OrderError extends Error {
@@ -53,5 +53,16 @@ export function createMerchantOrderClient(baseUrl: string, fetcher: typeof fetch
 }
 export function createCustomerOrderClient(baseUrl: string, publishableKey: string, fetcher: typeof fetch = fetch) {
   const request = transport(baseUrl, fetcher, publishableKey);
-  return { detail: (id: string) => request<{ order: CustomerOrder }>("/store/gospaza/orders/" + encodeURIComponent(id)) };
+  const path = (id: string) => "/store/gospaza/orders/" + encodeURIComponent(id);
+  return {
+    detail: (id: string) => request<{ order: CustomerOrder }>(path(id)),
+    preference: (id: string) => request<{ preference: ShortagePreference }>(path(id) + "/substitution-preference"),
+    updatePreference: (id: string, input: ShortagePreferenceInput) => request<{ preference: ShortagePreference }>(path(id) + "/substitution-preference", "PUT", {
+      preference: input.preference, expected_revision: input.expected_revision,
+    }),
+    shortages: (id: string) => request<OrderShortages>(path(id) + "/shortages"),
+    omit: (id: string, caseId: string, input: ShortageOmissionInput) => request<{ shortage: ShortageResolution }>(path(id) + "/shortages/" + encodeURIComponent(caseId) + "/omit", "POST", {
+      expected_revision: input.expected_revision, confirmed: input.confirmed,
+    }),
+  };
 }

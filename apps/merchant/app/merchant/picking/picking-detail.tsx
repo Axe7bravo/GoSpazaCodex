@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { PickingLine, PickingOrder, MerchantMember } from "@gospaza/contracts";
+import type { PickingLine, PickingOrder, MerchantMember, OrderShortages } from "@gospaza/contracts";
 import { AuthError, PickingError } from "@gospaza/api-client";
 import { pickingClient, pickingError, pickingLabels, assigneeLabel } from "../../picking-client";
 import { merchantClient, merchantError } from "../../merchant-client";
@@ -38,6 +38,7 @@ function Detail({ id }: { id: string }) {
   const self = tenant.membership.id;
   const mayPick = tenant.membership.capabilities.includes("MERCHANT_PICKING_PERFORM");
   const mayReassign = tenant.membership.capabilities.includes("MERCHANT_PICKING_REASSIGN");
+  const [shortages, setShortages] = useState<OrderShortages | null>(null);
   const [order, setOrder] = useState<PickingOrder | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -53,14 +54,14 @@ function Detail({ id }: { id: string }) {
     async function read() {
       const version = ++generation;
       try {
-        const response = await pickingClient.detail(id);
+        const [response, shortageResponse] = await Promise.all([pickingClient.detail(id), pickingClient.shortages(id)]);
         if (!alive(version)) return;
-        current = response.picking; setOrder(current); setError("");
+        current = response.picking; setOrder(current); setShortages(shortageResponse); setError("");
         setEpoch((value) => value + 1); setEditing(null); setConfirmation(null);
         ++teamGeneration; setMembers(null); setTarget("");
       } catch (cause) {
         if (!alive(version)) return;
-        current = null; setOrder(null); setConfirmation(null); setError(pickingError(cause));
+        current = null; setOrder(null); setShortages(null); setConfirmation(null); setError(pickingError(cause));
         if (cause instanceof PickingError && [401, 403].includes(cause.status)) void refresh();
       } finally { if (alive(version)) setLoading(false); }
     }
@@ -87,7 +88,7 @@ function Detail({ id }: { id: string }) {
         if (cause instanceof PickingError && [401, 403].includes(cause.status)) void refresh();
       } finally {
         if (active) {
-          current = null; setOrder(null); setConfirmation(null); setLoading(true);
+          current = null; setOrder(null); setShortages(null); setConfirmation(null); setLoading(true);
           await read(); // Read only after success, conflict or uncertainty. Never replay a write.
           writing = false; if (active) setBusy(false);
         }
@@ -115,7 +116,14 @@ function Detail({ id }: { id: string }) {
   }, [id, self, mayPick, mayReassign, refresh]);
   const disabled = loading || busy || !!error;
   const assigned = order?.status === "IN_PROGRESS" && order.assigned_member_id === self && mayPick;
-  const ready = !!order?.lines.length && order.lines.every((line) => line.picked_quantity === line.ordered_quantity && line.unresolved_quantity === 0 && !line.shortage_recorded);
+  const ready = !!shortages && !!order?.lines.length && order.lines.every((line) => {
+    const omitted = line.omitted_quantity ?? 0;
+    const resolution = shortages.shortages.find((item) => item.line_id === line.id);
+    return line.picked_quantity + omitted === line.ordered_quantity && line.unresolved_quantity === 0
+      && (omitted > 0 ? resolution?.status === "RESOLVED_OMITTED"
+        && resolution.picked_quantity === line.picked_quantity && resolution.omitted_quantity === omitted
+        : !line.shortage_recorded && resolution?.status !== "CUSTOMER_DECISION_REQUIRED");
+  });
   return <div className="application-content picking-page" aria-busy={loading || busy}>
     <Link href="/merchant/picking">All picking orders</Link>
     <h1>{order ? "Pick order #" + order.display_id : "Picking details"}</h1>
@@ -127,19 +135,22 @@ function Detail({ id }: { id: string }) {
     {order && <>
       <h2>{pickingLabels[order.status]}</h2>
       <p>Assignee: {assigneeLabel(order.assigned_member_id, self)}</p>
+      {shortages && <p>Customer preference: {shortages.preference.preference === "CONTACT_ME" ? "Ask before leaving unavailable items out" : "Leave unavailable items out"}{!shortages.preference.chosen_at ? " (default, not explicitly selected)" : ""}.</p>}
       {order.status === "COMPLETED" && <p>Picking is complete. No further picking changes are available.</p>}
       {order.status === "IN_PROGRESS" && !assigned && <p>This pick is read-only for you. Only the assigned employee may record goods.</p>}
       {order.status === "NOT_STARTED" && mayPick && <button className="picking-primary" disabled={disabled} onClick={() => actions.current?.write({ kind: "claim" })}>Claim picking</button>}
       <div className="picking-lines">{order.lines.map((line) => <article className="picking-card" key={line.id} aria-label={line.title}>
         <h3>{line.title}</h3><p>{line.variant_title}{line.sku ? " · " + line.sku : ""}</p>
-        <dl className="picking-counts"><div><dt>Ordered</dt><dd>{line.ordered_quantity}</dd></div><div><dt>Picked</dt><dd>{line.picked_quantity}</dd></div><div><dt>Unresolved</dt><dd>{line.unresolved_quantity}</dd></div></dl>
-        <p>Shortage: {line.shortage_recorded ? "Yes — original goods still needed" : "No"}</p>
-        {assigned && <LineEditor key={line.id + ":" + epoch} line={line} disabled={disabled || (editing !== null && editing !== line.id)}
+        <dl className="picking-counts"><div><dt>Ordered</dt><dd>{line.ordered_quantity}</dd></div><div><dt>Picked</dt><dd>{line.picked_quantity}</dd></div><div><dt>Omitted</dt><dd>{line.omitted_quantity ?? 0}</dd></div><div><dt>Unresolved</dt><dd>{line.unresolved_quantity}</dd></div></dl>
+        <p>Shortage: {(line.omitted_quantity ?? 0) > 0 ? "Resolved by omission" : line.shortage_recorded ? "Yes — original goods still needed" : "No"}</p>
+        {shortages?.shortages.find((item) => item.line_id === line.id)?.status === "CUSTOMER_DECISION_REQUIRED" && <p>Waiting for the customer’s decision. Continue picking other lines.</p>}
+        {(line.omitted_quantity ?? 0) > 0 && <p>This quantity will not be supplied. Any payment adjustment has not yet been processed. This line can no longer be edited.</p>}
+        {assigned && (line.omitted_quantity ?? 0) === 0 && shortages?.shortages.find((item) => item.line_id === line.id)?.status !== "RESOLVED_OMITTED" && <LineEditor key={line.id + ":" + epoch} line={line} disabled={disabled || (editing !== null && editing !== line.id)}
           onEdit={() => setEditing(line.id)} onCancel={() => { setEditing(null); setEpoch((value) => value + 1); }}
           onSave={(quantity, shortage) => actions.current?.write({ kind: "line", line: line.id, quantity, shortage })} />}
       </article>)}</div>
       {assigned && <section aria-label="Complete picking">
-        <p>{ready ? "All original quantities are recorded. Ready to complete picking." : "Completion is blocked until every original quantity is picked and all shortage markers are cleared."}</p>
+        <p>{ready ? "All quantities are physically picked or resolved by omission. Ready to complete picking." : "Completion is blocked until every quantity is physically picked or resolved by omission."}</p>
         {editing && <p>Save or discard your line changes before completing or reassigning.</p>}
         {confirmation === "complete" ? <>
           <p>Complete this pick? Picking cannot be reopened.</p>

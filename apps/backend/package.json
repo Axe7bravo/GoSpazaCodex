@@ -30,7 +30,8 @@
     "test:payment-reconciliation": "medusa exec ./src/scripts/verify-payment-reconciliation.ts",
     "test:order-operations": "medusa exec ./src/scripts/verify-order-operations.ts",
     "test:order-decisions": "medusa exec ./src/scripts/verify-order-decisions.ts",
-    "test:picking": "medusa exec ./src/scripts/verify-picking.ts"
+    "test:picking": "medusa exec ./src/scripts/verify-picking.ts",
+    "test:shortages": "medusa exec ./src/scripts/verify-shortages.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

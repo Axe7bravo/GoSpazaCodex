@@ -104,3 +104,15 @@ main > p:not(.brand) { color: var(--gs-muted); margin-bottom: var(--gs-space-4);
 .order-secondary { background: transparent; color: #342b24; border: 1px solid currentColor; }
 .order-page textarea { display: block; width: 100%; min-height: 7rem; }
 @media (min-width: 800px) { .order-columns { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+
+/* M13: omission consent, separate from commercial totals. */
+.shortage-panel { margin-block: 1.5rem; padding: clamp(1rem, 3vw, 2rem); background: #fffdf8; border: 1px solid #ddd4c8; border-radius: 1rem; }
+.shortage-panel fieldset { min-width: 0; padding: 1rem; border: 1px solid #ddd4c8; border-radius: .5rem; }
+.shortage-panel label { display: grid; gap: .5rem; }
+.shortage-panel select { width: 100%; max-width: 36rem; padding: .75rem; font: inherit; }
+.shortage-panel button { min-height: 48px; margin: .5rem .5rem .5rem 0; }
+.shortage-panel button:not(:disabled) { cursor: pointer; }
+.shortage-card { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ddd4c8; }
+.shortage-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.shortage-counts dd { margin: .25rem 0; font-weight: 700; font-size: 1.4rem; }
+@media (min-width: 800px) { .shortage-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

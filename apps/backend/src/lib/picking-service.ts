@@ -1,3 +1,6 @@
+import { OrderOperationsService } from "./order-operations-service";
+import { choosePreference, preferenceDTO, preferenceRow, resolutionRows, resolutionDTO, omittedFor, synchronizeShortage, decideOmission } from "../modules/marketplace/shortage-resolution";
+import { accounted, shortageConflict, shortageAdmissionInput } from "../modules/marketplace/shortage-policy";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { InferTypeOf, MedusaContainer } from "@medusajs/framework/types";
@@ -10,8 +13,7 @@ import type PickLine from "../modules/marketplace/models/pick-line";
 import type PickEvent from "../modules/marketplace/models/pick-event";
 import type MerchantMember from "../modules/marketplace/models/merchant-member";
 import { withMerchantAuthorization } from "../modules/marketplace/merchant-authorization";
-import type { ActiveMerchant } from "../modules/marketplace/merchant-authorization";
-import { completedOrderCandidates, readOrderHandoff } from "../modules/marketplace/order-operation-repository";
+import { completedOrderCandidates, readOrderHandoff, insertOrderOperation } from "../modules/marketplace/order-operation-repository";
 import type { OrderOperationRow } from "../modules/marketplace/order-operation-repository";
 import { orderParse } from "../modules/marketplace/order-operation-policy";
 import { requireCapability, resourceId } from "../modules/marketplace/team-policy";
@@ -42,7 +44,7 @@ export class PickingService {
       return { ...row, ordered_quantity_at_start: ordered, picked_quantity: picked };
     });
   }
-  private async load(trx: Knex.Transaction, tenant: ActiveMerchant, orderId: string) {
+  private async load(trx: Knex.Transaction, tenant: { merchant: { id: string }; store: { id: string } }, orderId: string) {
     const operation = await trx<OrderOperationRow>("order_operation").where({
       medusa_order_id: orderId, merchant_id: tenant.merchant.id, merchant_store_id: tenant.store.id,
     }).whereNull("deleted_at").forUpdate().first();
@@ -67,7 +69,9 @@ export class PickingService {
         validatePicked(native.quantity, line.picked_quantity, line.shortage_recorded);
       }
     }
-    return { operation, order, nativeLines, fingerprint, session, lines };
+    const resolutions = session ? await resolutionRows(trx, session.id) : [];
+    for (const line of lines) omittedFor(line, resolutions);
+    return { operation, order, nativeLines, fingerprint, session, lines, resolutions };
   }
   private project(state: Awaited<ReturnType<PickingService["load"]>>): PickingOrder {
     return {
@@ -81,7 +85,8 @@ export class PickingService {
         const picked = line?.picked_quantity ?? 0;
         return { id: native.id, title: native.title, variant_title: native.variant_title, sku: native.sku,
           ordered_quantity: native.quantity, picked_quantity: picked,
-          shortage_recorded: line?.shortage_recorded ?? false, unresolved_quantity: native.quantity - picked };
+          omitted_quantity: line ? omittedFor(line, state.resolutions) : 0,
+          shortage_recorded: line?.shortage_recorded ?? false, unresolved_quantity: native.quantity - picked - (line ? omittedFor(line, state.resolutions) : 0) };
       }),
     };
   }
@@ -104,6 +109,71 @@ export class PickingService {
       const orders: PickingOrder[] = [];
       for (const row of rows) orders.push(this.project(await this.load(trx, tenant, row.order_id)));
       return { orders, count: Number(count?.count ?? 0), limit: input.limit, offset: input.offset };
+    });
+  }
+  async shortageDetail(identity: string, orderId: string) {
+    orderParse(resourceId, orderId);
+    return withMerchantAuthorization(this.db, this.marketplace, identity, "MERCHANT_PICKING_VIEW", async (trx, tenant) => {
+      const state = await this.load(trx, tenant, orderId);
+      return { preference: preferenceDTO(await preferenceRow(trx, state.operation.id)),
+        shortages: state.resolutions.map(resolutionDTO) };
+    });
+  }
+  async admitShortage(identity: string, orderId: string, lineId: string, value: unknown) {
+    orderParse(resourceId, orderId); orderParse(resourceId, lineId);
+    const input = orderParse(shortageAdmissionInput, value);
+    return withMerchantAuthorization(this.db, this.marketplace, identity, "MERCHANT_PICKING_PERFORM", async (trx, tenant) => {
+      const state = await this.load(trx, tenant, orderId);
+      const session = state.session;
+      if (!session || session.status !== "IN_PROGRESS" || session.revision !== input.expected_revision) throw shortageConflict();
+      if (session.assigned_member_id !== tenant.membership.id) throw forbidden();
+      const line = state.lines.find((row) => row.medusa_order_line_id === lineId);
+      if (!line) throw pickingMissing();
+      if (!line.shortage_recorded || line.picked_quantity >= line.ordered_quantity_at_start) throw shortageConflict();
+      const row = await synchronizeShortage(trx, { operationId: state.operation.id, orderId,
+        completionId: state.operation.checkout_completion_id, sessionId: session.id, fingerprint: state.fingerprint },
+        line, { type: "merchant", id: tenant.membership.id });
+      if (!row) throw shortageConflict();
+      return resolutionDTO(row);
+    });
+  }
+  async customerShortages(customerId: string, orderId: string, action: "READ" | "PREFERENCE" | "OMIT", value?: unknown, caseId?: string) {
+    return new OrderOperationsService(this.container).withCustomerOrder(customerId, orderId, async (trx, handoff) => {
+      await insertOrderOperation(trx, handoff);
+      const operation = await trx<OrderOperationRow>("order_operation").where({ medusa_order_id: orderId,
+        merchant_id: handoff.merchant_id, merchant_store_id: handoff.merchant_store_id }).whereNull("deleted_at").forUpdate().first();
+      if (!operation) throw pickingMissing();
+      // Preferences are useful before merchant acceptance; shortages still require ACCEPTED.
+      if (operation.status === "PENDING_ACCEPTANCE" && action !== "OMIT") {
+        return action === "PREFERENCE"
+          ? { preference: await choosePreference(trx, operation.id, customerId, value) }
+          : { preference: preferenceDTO(await preferenceRow(trx, operation.id)), shortages: [] };
+      }
+      const state = await this.load(trx, { merchant: { id: handoff.merchant_id }, store: { id: handoff.merchant_store_id } }, orderId);
+      if (action === "PREFERENCE") {
+        if (state.session?.status === "COMPLETED") {
+          return { preference: await choosePreference(trx, state.operation.id, customerId, value, false) };
+        }
+        // An existing M12 shortage from before migration also freezes the default.
+        if (state.session) for (const line of state.lines) {
+          if (line.shortage_recorded) await synchronizeShortage(trx, { operationId: state.operation.id, orderId,
+            completionId: state.operation.checkout_completion_id, sessionId: state.session.id, fingerprint: state.fingerprint },
+            line, { type: "system", id: null });
+        }
+        return { preference: await choosePreference(trx, state.operation.id, customerId, value) };
+      }
+      if (action === "OMIT") {
+        const id = orderParse(resourceId, caseId);
+        const row = await trx<{ pick_line_id: string }>("shortage_resolution")
+          .where({ id, order_operation_id: state.operation.id }).first();
+        if (!row || !state.session) throw pickingMissing();
+        const line = state.lines.find((item) => item.id === row.pick_line_id);
+        if (!line) throw pickingMissing();
+        return { shortage: await decideOmission(trx, { operationId: state.operation.id, orderId,
+          completionId: state.operation.checkout_completion_id, sessionId: state.session.id, fingerprint: state.fingerprint },
+          line, customerId, id, value, state.session.status) };
+      }
+      return { preference: preferenceDTO(await preferenceRow(trx, state.operation.id)), shortages: state.resolutions.map(resolutionDTO) };
     });
   }
   async mutate(identity: string, orderId: string, action: PickingAction, value: unknown, lineId?: string): Promise<PickingResult> {
@@ -166,6 +236,7 @@ export class PickingService {
       if (command.action === "LINE") {
         if (!line) throw pickingMissing();
         validatePicked(line.ordered_quantity_at_start, command.input.picked_quantity, command.input.shortage_recorded);
+        if (omittedFor(line, state.resolutions) > 0 && (line.picked_quantity !== command.input.picked_quantity || line.shortage_recorded !== command.input.shortage_recorded)) throw pickingConflict();
         if (line.picked_quantity === command.input.picked_quantity && line.shortage_recorded === command.input.shortage_recorded) return result(session.revision);
         before = { picked_quantity: line.picked_quantity, shortage_recorded: line.shortage_recorded };
         after = { picked_quantity: command.input.picked_quantity, shortage_recorded: command.input.shortage_recorded };
@@ -175,6 +246,10 @@ export class PickingService {
         });
         line.picked_quantity = command.input.picked_quantity;
         line.shortage_recorded = command.input.shortage_recorded;
+        await synchronizeShortage(trx, { operationId: state.operation.id, orderId,
+          completionId: state.operation.checkout_completion_id, sessionId: session.id, fingerprint: state.fingerprint },
+          line, { type: "merchant", id: actor });
+        state.resolutions = await resolutionRows(trx, session.id);
       } else if (command.action === "REASSIGN") {
         const target = await trx<Member>("merchant_member").where({
           id: command.input.target_member_id, merchant_id: tenant.merchant.id, status: "ACTIVE",
@@ -188,7 +263,7 @@ export class PickingService {
         before = { assigned_member_id: assigned }; assigned = target.id;
         after = { assigned_member_id: assigned };
       } else {
-        if (!state.lines.length || state.lines.some((row) => row.shortage_recorded || row.picked_quantity !== row.ordered_quantity_at_start)) throw pickingConflict();
+        if (!state.lines.length || state.lines.some((row) => !accounted(row.ordered_quantity_at_start, row.picked_quantity, omittedFor(row, state.resolutions)))) throw pickingConflict();
         before = { status: session.status }; after = { status: "COMPLETED" };
       }
       const [updated] = await trx<Session>("pick_session").where({ id: session.id }).update({

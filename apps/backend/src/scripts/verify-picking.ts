@@ -1,3 +1,4 @@
+import { cleanupShortages } from "./shortage-verification-cleanup";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { ExecArgs, InferTypeOf, IInventoryService, IOrderModuleService, IPaymentModuleService } from "@medusajs/framework/types";
@@ -419,6 +420,7 @@ export default async function verifyPicking(args: ExecArgs) {
         await trx("merchant").whereIn("id", [first.merchantId, second.merchantId]).orderBy("id").forUpdate().select("id");
         const sessions = trx("pick_session").select("id").whereIn("order_operation_id",
           trx("order_operation").select("id").whereIn("medusa_order_id", [...ids]));
+        await cleanupShortages(trx, [...ids]);
         await trx("pick_event").whereIn("pick_session_id", sessions).delete();
         await trx("pick_line").whereIn("pick_session_id", sessions).delete();
         await trx("pick_session").whereIn("id", sessions).delete();

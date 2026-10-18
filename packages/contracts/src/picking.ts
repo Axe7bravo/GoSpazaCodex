@@ -8,6 +8,8 @@ export interface PickingLine {
   picked_quantity: number;
   shortage_recorded: boolean;
   unresolved_quantity: number;
+  /** Operational omission, never physical picking or a refund amount. */
+  omitted_quantity?: number;
 }
 export interface PickingOrder {
   id: string;
