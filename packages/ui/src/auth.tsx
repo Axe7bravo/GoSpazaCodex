@@ -2,15 +2,15 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { AuthError, validateCredentials } from "@gospaza/api-client";
-import type { ApplicantAuthClient, AuthClient, CustomerAuthClient } from "@gospaza/api-client";
-import type { ActorIdentity, ApplicantIdentity, CustomerAccount } from "@gospaza/contracts";
+import type { ApplicantAuthClient, AuthClient, CustomerAuthClient, DriverAuthClient } from "@gospaza/api-client";
+import type { ActorIdentity, ApplicantIdentity, DriverOnboardingIdentity, CustomerAccount } from "@gospaza/contracts";
 import { Button } from "./index";
 
 function message(error: unknown) {
   return error instanceof AuthError ? error.message : "We cannot complete this request right now. Please try again.";
 }
 export function AuthForm({ client, title, destination, registration = false, registerHref, note }: {
-  client: AuthClient | CustomerAuthClient | ApplicantAuthClient; title: string; destination: string;
+  client: AuthClient | CustomerAuthClient | ApplicantAuthClient | DriverAuthClient; title: string; destination: string;
   registration?: boolean; registerHref?: string; note?: string;
 }) {
   const [email, setEmail] = useState("");
@@ -62,10 +62,10 @@ export function AuthForm({ client, title, destination, registration = false, reg
 }
 
 export function SessionBoundary({ client, title, children }: {
-  client: AuthClient | CustomerAuthClient | ApplicantAuthClient; title: string;
-  children: (identity: ActorIdentity | ApplicantIdentity, customer: CustomerAccount | null) => ReactNode;
+  client: AuthClient | CustomerAuthClient | ApplicantAuthClient | DriverAuthClient; title: string;
+  children: (identity: ActorIdentity | ApplicantIdentity | DriverOnboardingIdentity, customer: CustomerAccount | null) => ReactNode;
 }) {
-  const [session, setSession] = useState<{ identity: ActorIdentity | ApplicantIdentity; customer: CustomerAccount | null } | null>(null);
+  const [session, setSession] = useState<{ identity: ActorIdentity | ApplicantIdentity | DriverOnboardingIdentity; customer: CustomerAccount | null } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {

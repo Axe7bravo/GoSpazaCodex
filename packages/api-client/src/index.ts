@@ -52,3 +52,7 @@ export * from "./checkout";
 export * from "./orders";
 
 export * from "./picking";
+
+export { createDriverAuthClient } from "./auth";
+export type { DriverAuthClient } from "./auth";
+export * from "./drivers";

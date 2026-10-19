@@ -1,3 +1,4 @@
+import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
 import { blockNativePayments } from "../lib/checkout-http";
 import { blockNativeShipping } from "../lib/scheduling-http";
 import { blockNativeCarts } from "../lib/cart-http";
@@ -24,11 +25,11 @@ export default defineMiddlewares({
     { matcher: /^\/auth(?:\/.*)?$/i, middlewares: [authOrigin] },
     { matcher: /^\/auth\/[^/]+\/emailpass(?:\/register)?\/?$/i, method: ["POST", "GET"], middlewares: [authRateLimit, validateEmailPass] },
     { matcher: "/store/customers", method: "POST", middlewares: [authOrigin] },
-    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors, guardEmailPassRegistration] },
+    { matcher: "/auth/:actor_type/:auth_provider/register", method: "POST", middlewares: [publicRegistrationActors, strictDriverRegistration, guardEmailPassRegistration] },
     { matcher: "/auth/session", method: "POST", middlewares: [rotateSession] },
     { matcher: /^\/store\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("customer")] },
     { matcher: /^\/merchant(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, merchantBoundary] },
-    { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, requireActor("driver")] },
+    { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, driverBoundary] },
     { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },
   ],
 });
