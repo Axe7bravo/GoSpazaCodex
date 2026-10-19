@@ -6,7 +6,10 @@
     ".": "./src/index.tsx",
     "./tokens.css": "./src/tokens.css",
     "./auth": "./src/auth.tsx",
-    "./orders": "./src/orders.tsx"
+    "./orders": "./src/orders.tsx",
+    "./driver-resource": "./src/driver-resource.ts",
+    "./drivers": "./src/drivers.tsx",
+    "./drivers.css": "./src/drivers.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

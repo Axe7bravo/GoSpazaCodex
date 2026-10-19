@@ -14,7 +14,7 @@ export async function guardEmailPassRegistration(req: MedusaRequest, res: Medusa
   if (req.params.auth_provider !== "emailpass") { next(); return; }
   try {
     const actor = req.params.actor_type;
-    if ((actor !== "merchant" && actor !== "customer") || !AUTH_METHODS[actor].includes("emailpass")) {
+    if ((actor !== "merchant" && actor !== "customer" && actor !== "driver") || !AUTH_METHODS[actor].includes("emailpass")) {
       throw new MedusaError(MedusaError.Types.FORBIDDEN, "Registration is not available.");
     }
     const body = req.body as { email?: unknown } | undefined;

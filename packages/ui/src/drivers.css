@@ -1,0 +1,20 @@
+/* M14 account and review surfaces; no dynamic dispatch controls. */
+.driver-workspace { max-width: 72rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+.driver-workspace.driver-mobile { max-width: 42rem; }
+.driver-card { margin-block: 1rem; padding: 1.25rem; border: 1px solid #d8d0c3; border-radius: .85rem; background: #fffdf8; overflow-wrap: anywhere; }
+.driver-card dl { display: grid; grid-template-columns: minmax(5rem, 1fr) 2fr; gap: .5rem 1rem; }
+.driver-card dt { font-weight: 700; }
+.driver-card dd { margin: 0; }
+.driver-workspace label { display: flex; flex-direction: column; gap: .4rem; margin-block: 1rem; }
+.driver-workspace input, .driver-workspace select, .driver-workspace textarea { width: 100%; min-height: 48px; padding: .7rem; border: 1px solid #8b857d; border-radius: .5rem; background: #fffdf8; color: #24211d; font: inherit; }
+.driver-workspace textarea { min-height: 6rem; }
+.driver-workspace button { min-height: 48px; padding: .65rem 1rem; border: 1px solid #24211d; border-radius: .5rem; background: #fffdf8; color: #24211d; font: inherit; cursor: pointer; }
+.driver-workspace button[type=submit], .driver-primary { background: var(--gs-orange, #ff7a1a); font-weight: 700; }
+.driver-workspace button:disabled { opacity: .6; cursor: default; }
+.driver-workspace fieldset { min-width: 0; border: 0; padding: 0; }
+.driver-workspace .driver-check { flex-direction: row; align-items: center; }
+.driver-workspace .driver-check input { width: 24px; min-height: 24px; flex-shrink: 0; }
+.driver-actions { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }
+.driver-grid { display: grid; gap: 1rem; }
+.driver-workspace ul { list-style: none; padding: 0; }
+@media (min-width: 800px) { .driver-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

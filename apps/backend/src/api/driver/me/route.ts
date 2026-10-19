@@ -1,3 +1,2 @@
-import { actorIdentity } from "../../../lib/auth-policy";
-
-export const GET = actorIdentity("driver");
+import { me } from "../../../lib/driver-http";
+export { me as GET };

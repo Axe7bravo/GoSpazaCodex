@@ -32,6 +32,8 @@ async function mockAuth(page: Page, actor: string, scenario: "success" | "invali
     if (path === "/store/gospaza/cart") {
       await reply({ cart: null, state: "empty", eligibility: "pending" }); return;
     }
+    if (path === "/driver/onboarding/me") { await reply(scenario === "wrong" ? {} : { onboarding: true }, scenario === "wrong" ? 401 : 200); return; }
+    if (path === "/driver/profile") { await reply({}, 401); return; } // Authenticated driver, not yet bootstrapped.
     if (path.endsWith("/me")) {
       await reply({ actor: { type: scenario === "wrong" ? "not-the-requested-actor" : actor, id: actor + "_fixture" } }); return;
     }

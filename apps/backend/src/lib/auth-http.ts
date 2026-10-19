@@ -44,7 +44,7 @@ export function authOrigin(req: MedusaRequest, res: MedusaResponse, next: Medusa
 }
 
 export function publicRegistrationActors(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
-  if (!["customer", "merchant"].includes(req.params.actor_type ?? "")) {
+  if (!["customer", "merchant", "driver"].includes(req.params.actor_type ?? "")) {
     res.status(403).json({ message: "Public registration is not available for this actor." });
     return;
   }

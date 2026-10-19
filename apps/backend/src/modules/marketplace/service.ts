@@ -1,3 +1,6 @@
+import DriverProfile from "./models/driver-profile";
+import DriverAffiliation from "./models/driver-affiliation";
+import DriverEvent from "./models/driver-event";
 import OrderShortagePreference from "./models/order-shortage-preference";
 import ShortageResolution from "./models/shortage-resolution";
 import ShortageEvent from "./models/shortage-event";
@@ -59,7 +62,7 @@ const APPS = "merchant_application";
 const DOCS = "merchant_application_document";
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
 const conflict = (message: string) => new MedusaError(MedusaError.Types.NOT_ALLOWED, message);
-export default class MarketplaceService extends MedusaService({ OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
+export default class MarketplaceService extends MedusaService({ DriverProfile, DriverAffiliation, DriverEvent, OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
   private db: Knex;
   constructor(container: { __pg_connection__: Knex }) { super(container); this.db = container.__pg_connection__; }
   // All SQL is confined to this module's tables. Row locks serialize submit/edit/file mutations.

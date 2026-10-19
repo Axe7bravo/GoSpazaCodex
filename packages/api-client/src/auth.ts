@@ -1,4 +1,4 @@
-import type { ActorType, ActorIdentity, ApplicantIdentity, CustomerAccount } from "@gospaza/contracts";
+import type { ActorType, ActorIdentity, ApplicantIdentity, DriverOnboardingIdentity, CustomerAccount } from "@gospaza/contracts";
 
 const identityPaths: Record<ActorType, string> = {
   customer: "/store/gospaza/me", merchant: "/merchant/me", driver: "/driver/me", user: "/admin/gospaza/me",
@@ -28,7 +28,7 @@ export interface ApplicantAuthClient extends AuthClient<ApplicantIdentity> {
   register(email: string, password: string): Promise<ApplicantIdentity>;
 }
 export function createApplicantAuthClient(options: { baseUrl: string; fetcher?: typeof fetch }): ApplicantAuthClient {
-  const client = buildClient("merchant", options, true);
+  const client = buildClient("merchant", options, "applicant");
   return { actor: client.actor, me: client.me, login: client.login, logout: client.logout, register: client.registerApplicant };
 }
 export interface CustomerAuthClient extends AuthClient {
@@ -43,8 +43,16 @@ export function createCustomerAuthClient(options: { baseUrl: string; publishable
   return buildClient("customer", options);
 }
 
-type SessionIdentity<Applicant extends boolean> = Applicant extends true ? ApplicantIdentity : ActorIdentity;
-function buildClient<Applicant extends boolean = false>(actor: ActorType, { baseUrl, publishableKey, fetcher = fetch }: { baseUrl: string; publishableKey?: string; fetcher?: typeof fetch }, applicant: Applicant = false as Applicant) {
+export interface DriverAuthClient extends AuthClient<DriverOnboardingIdentity> {
+  register(email: string, password: string): Promise<DriverOnboardingIdentity>;
+}
+export function createDriverAuthClient(options: { baseUrl: string; fetcher?: typeof fetch }): DriverAuthClient {
+  const client = buildClient("driver", options, "driver");
+  return { actor: client.actor, me: client.me, login: client.login, logout: client.logout, register: client.registerDriver };
+}
+type IdentityMode = "actor" | "applicant" | "driver";
+type SessionIdentity<Mode extends IdentityMode> = Mode extends "applicant" ? ApplicantIdentity : Mode extends "driver" ? DriverOnboardingIdentity : ActorIdentity;
+function buildClient<Mode extends IdentityMode = "actor">(actor: ActorType, { baseUrl, publishableKey, fetcher = fetch }: { baseUrl: string; publishableKey?: string; fetcher?: typeof fetch }, mode: Mode = "actor" as Mode) {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new AuthError("configuration", "Invalid API configuration.");
 
@@ -86,16 +94,20 @@ function buildClient<Applicant extends boolean = false>(actor: ActorType, { base
       throw error;
     }
   }
-  async function me(): Promise<SessionIdentity<Applicant>> {
-    const data = await request(applicant ? "/merchant/applicant/me" : identityPaths[actor]);
-    if (applicant) {
+  async function me(): Promise<SessionIdentity<Mode>> {
+    const data = await request(mode === "applicant" ? "/merchant/applicant/me" : mode === "driver" ? "/driver/onboarding/me" : identityPaths[actor]);
+    if (mode === "driver") {
+      if (!record(data) || data.onboarding !== true) throw new AuthError("unauthorized", "Driver session required.");
+      return { type: "driver", scope: "onboarding" } as SessionIdentity<Mode>;
+    }
+    if (mode === "applicant") {
       if (!record(data) || data.applicant !== true) throw new AuthError("unauthorized", "Applicant session required.");
-      return { type: "merchant", scope: "application" } as SessionIdentity<Applicant>;
+      return { type: "merchant", scope: "application" } as SessionIdentity<Mode>;
     }
     if (!record(data) || !record(data.actor) || data.actor.type !== actor || typeof data.actor.id !== "string" || !data.actor.id) {
       throw new AuthError("unauthorized", "This session cannot access this application.");
     }
-    return { type: actor, id: data.actor.id } as SessionIdentity<Applicant>;
+    return { type: actor, id: data.actor.id } as SessionIdentity<Mode>;
   }
   async function logout() {
     try { await request("/auth/session", "DELETE"); }
@@ -114,7 +126,7 @@ function buildClient<Applicant extends boolean = false>(actor: ActorType, { base
         await logout();
         throw new AuthError("unprovisioned", actor === "customer"
           ? "Finish creating your customer account using Register."
-          : applicant ? "This session cannot access merchant applications. Sign in again."
+          : mode === "applicant" ? "This session cannot access merchant applications. Sign in again."
           : "This account is not provisioned for this application. Contact your administrator.");
       }
       throw error;
@@ -153,10 +165,10 @@ function buildClient<Applicant extends boolean = false>(actor: ActorType, { base
     await login(email, password);
     return account();
   }
-  async function registerApplicant(email: string, password: string): Promise<SessionIdentity<Applicant>> {
+  async function registerApplicant(email: string, password: string): Promise<SessionIdentity<Mode>> {
     const invalid = validateCredentials(email, password, true);
     if (invalid) throw new AuthError("validation", invalid);
-    if (!applicant || actor !== "merchant") throw new AuthError("configuration", "Applicant client required.");
+    if (mode !== "applicant" || actor !== "merchant") throw new AuthError("configuration", "Applicant client required.");
     try {
       const token = tokenFrom(await request("/auth/merchant/emailpass/register", "POST", { email: email.trim(), password }, undefined, true));
       await request("/auth/session", "POST", undefined, token);
@@ -166,5 +178,21 @@ function buildClient<Applicant extends boolean = false>(actor: ActorType, { base
       throw error;
     }
   }
-  return { actor, me, login, logout, register, account, registerApplicant };
+  async function registerDriver(email: string, password: string): Promise<SessionIdentity<Mode>> {
+    if (mode !== "driver" || actor !== "driver") throw new AuthError("configuration", "Driver client required.");
+    const invalid = validateCredentials(email, password, true);
+    if (invalid) throw new AuthError("validation", invalid);
+    let token: string;
+    try {
+      token = tokenFrom(await request("/auth/driver/emailpass/register", "POST", { email: email.trim(), password }, undefined, true));
+    } catch (error) {
+      if (error instanceof AuthError && error.status === 401) {
+        throw new AuthError("credentials", "Use Sign in with your existing GoSpaza credentials. Registration cannot replace an existing password.");
+      }
+      throw error;
+    }
+    await request("/auth/session", "POST", undefined, token);
+    return me();
+  }
+  return { actor, me, login, logout, register, account, registerApplicant, registerDriver };
 }

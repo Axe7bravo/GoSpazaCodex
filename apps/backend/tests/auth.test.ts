@@ -37,13 +37,21 @@ test("identity DTO uses an allowlist and never returns auth metadata", async () 
   await actorIdentity("merchant")(req, res);
   assert.deepEqual(body, { actor: { type: "merchant", id: "fixture_merchant" } });
 });
-test("registration excludes platform users and drivers and browser mutations reject untrusted origins", () => {
-  for (const actor of ["user", "driver"]) {
+test("registration permits customer, merchant and driver but rejects platform and unknown actors", () => {
+  for (const actor of ["customer", "merchant", "driver"]) {
+    let allowed = false;
+    const res = { status() { assert.fail("rejected public registration actor"); } } as unknown as MedusaResponse;
+    publicRegistrationActors({ params: { actor_type: actor } } as unknown as MedusaRequest, res, () => { allowed = true; });
+    assert.equal(allowed, true, actor);
+  }
+  for (const actor of ["user", "admin", "unknown", "", undefined]) {
     let status = 0;
     const res = { status(value: number) { status = value; return this; }, json() {} } as unknown as MedusaResponse;
     publicRegistrationActors({ params: { actor_type: actor } } as unknown as MedusaRequest, res, () => assert.fail("allowed registration"));
     assert.equal(status, 403);
   }
+});
+test("browser mutations reject untrusted origins", () => {
   let status = 0;
   const req = { method: "DELETE", get: (header: string) => header === "origin" ? "https://attacker.example" : undefined,
     scope: { resolve: () => ({ projectConfig: { http: { authCors: "http://localhost:3000" } } }) } } as unknown as MedusaRequest;

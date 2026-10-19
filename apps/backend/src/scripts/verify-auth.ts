@@ -1,10 +1,11 @@
+import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { Modules } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { ExecArgs, IApiKeyModuleService, IAuthModuleService, ICustomerModuleService, IUserModuleService } from "@medusajs/framework/types";
 
 // Real HTTP + PostgreSQL/Redis integration. Requires the local backend running.
-// Native fixtures only; fake merchant/driver actor IDs exist solely in these tests.
+// Native auth fixtures; driver authority requires a real metadata-free profile.
 export default async function verifyAuth({ container }: ExecArgs) {
   if (!["development", "test"].includes(process.env.APP_ENV ?? "")) throw new Error("Auth verification is local-only.");
   const base = new URL(process.env.BACKEND_URL!);
@@ -47,7 +48,7 @@ export default async function verifyAuth({ container }: ExecArgs) {
   const failures: unknown[] = [];
   try {
     for (const path of Object.values(paths)) assert.equal((await call(path)).status, 401, "anonymous rejected");
-    for (const actor of ["driver", "user"]) {
+    for (const actor of ["user"]) {
       assert.equal((await call("/auth/" + actor + "/emailpass/register", { method: "POST", body: { email: prefix + "@example.test", password } })).status, 403);
     }
     const accounts = new Map<Actor, { email: string; id: string }>();
@@ -83,11 +84,18 @@ export default async function verifyAuth({ container }: ExecArgs) {
         userIds.push(user.id);
         actorId = user.id;
       }
-      await auth.updateAuthIdentities({ id: result.authIdentity.id, app_metadata: { [actor + "_id"]: actorId } });
+      if (actor !== "driver") await auth.updateAuthIdentities({ id: result.authIdentity.id, app_metadata: { [actor + "_id"]: actorId } });
       accounts.set(actor, { email, id: actorId });
     }
     for (const [actor, account] of accounts) {
       const cookie = await login(actor, account.email);
+      if (actor === "driver") {
+        assert.equal((await call(paths.driver, { cookie })).status, 401, "No profile means no business authority");
+        const bootstrap = await call("/driver/profile/bootstrap", { method: "POST", cookie, body: {} });
+        assert.equal(bootstrap.status, 200);
+        const result = await bootstrap.json() as { profile: { id: string } };
+        account.id = result.profile.id;
+      }
       for (const [target, path] of Object.entries(paths)) {
         const response = await call(path, { cookie });
         assert.equal(response.status, actor === target && actor !== "merchant" ? 200 : 401, actor + " -> " + target);
@@ -135,6 +143,14 @@ export default async function verifyAuth({ container }: ExecArgs) {
           assert.ok([200, 401].includes(response.status), "Session cleanup returned HTTP " + response.status);
         },
       })),
+      { label: "driver profiles", run: async () => {
+        const db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
+        await db.transaction(async trx => {
+          const profiles = await trx<{ id: string }>("driver_profile").whereIn("auth_identity_id", identities).select("id");
+          await trx("driver_event").whereIn("driver_profile_id", profiles.map(p => p.id)).delete();
+          await trx("driver_profile").whereIn("id", profiles.map(p => p.id)).delete();
+        });
+      } },
       ...customerIds.map((id) => ({ label: "customer " + id, run: () => customers.deleteCustomers(id) })),
       ...userIds.map((id) => ({ label: "user " + id, run: () => users.deleteUsers([id]) })),
       ...identities.map((id) => ({ label: "auth identity " + id, run: () => auth.deleteAuthIdentities([id]) })),
