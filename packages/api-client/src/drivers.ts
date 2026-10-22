@@ -5,7 +5,7 @@ import type {
   DriverReviewInput, DriverStatus, DriverTargetPage, MerchantDriverDTO,
 } from "@gospaza/contracts";
 
-function transport(baseUrl: string, fetcher: typeof fetch) {
+export function driverTransport(baseUrl: string, fetcher: typeof fetch, headers: Record<string, string> = {}) {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new AuthError("configuration", "Invalid API configuration.");
   return async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -13,7 +13,7 @@ function transport(baseUrl: string, fetcher: typeof fetch) {
     try {
       response = await fetcher(new URL(path, base), {
         method, credentials: "include", cache: "no-store", signal: AbortSignal.timeout(15000),
-        headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        headers: { ...headers, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch { throw new AuthError("unavailable", "Unable to reach GoSpaza. Refresh to check the latest state before trying again."); }
@@ -34,7 +34,7 @@ const page = (offset = 0) => "?limit=20&offset=" + offset;
 const review = (input: DriverReviewInput) => ({ expected_revision: input.expected_revision, confirmed: input.confirmed, reason: input.reason });
 
 export function createDriverClient(baseUrl: string, fetcher: typeof fetch = fetch) {
-  const request = transport(baseUrl, fetcher);
+  const request = driverTransport(baseUrl, fetcher);
   const auth = createDriverAuthClient({ baseUrl, fetcher });
   return {
     // The onboarding probe authenticates a DRIVER even before its profile exists.
@@ -62,7 +62,7 @@ export function createDriverClient(baseUrl: string, fetcher: typeof fetch = fetc
   };
 }
 export function createMerchantDriverClient(baseUrl: string, fetcher: typeof fetch = fetch) {
-  const request = transport(baseUrl, fetcher);
+  const request = driverTransport(baseUrl, fetcher);
   return {
     list: (offset = 0) => request<DriverPage<MerchantDriverDTO>>("/merchant/drivers" + page(offset)),
     detail: (id: string) => request<{ item: MerchantDriverDTO }>("/merchant/drivers/" + ref(id)),
@@ -71,7 +71,7 @@ export function createMerchantDriverClient(baseUrl: string, fetcher: typeof fetc
   };
 }
 export function createAdminDriverClient(baseUrl: string, fetcher: typeof fetch = fetch) {
-  const request = transport(baseUrl, fetcher);
+  const request = driverTransport(baseUrl, fetcher);
   const path = (id: string) => "/admin/gospaza/drivers/" + ref(id);
   return {
     list: (offset = 0, status?: DriverStatus) => request<DriverPage<DriverProfileDTO>>("/admin/gospaza/drivers" + page(offset) + (status ? "&status=" + status : "")),

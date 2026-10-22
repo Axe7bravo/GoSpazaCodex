@@ -32,7 +32,10 @@
     "test:order-decisions": "medusa exec ./src/scripts/verify-order-decisions.ts",
     "test:picking": "medusa exec ./src/scripts/verify-picking.ts",
     "test:shortages": "medusa exec ./src/scripts/verify-shortages.ts",
-    "test:drivers": "medusa exec ./src/scripts/verify-drivers.ts"
+    "test:drivers": "medusa exec ./src/scripts/verify-drivers.ts",
+    "test:dispatch": "medusa exec ./src/scripts/verify-dispatch.ts",
+    "test:dispatch-orchestration": "medusa exec ./src/scripts/verify-dispatch-orchestration.ts",
+    "test:dispatch-acceptance": "medusa exec ./src/scripts/verify-dispatch-acceptance.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

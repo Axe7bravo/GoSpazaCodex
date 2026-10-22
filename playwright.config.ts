@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
-  globalSetup: "./tests/browser/m14-readiness.ts",
+  globalSetup: "./tests/browser/m15-readiness.ts",
   testDir: "./tests/browser",
   fullyParallel: false,
   workers: 1,

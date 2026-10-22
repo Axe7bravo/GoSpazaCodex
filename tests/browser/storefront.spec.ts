@@ -69,14 +69,8 @@ async function mock(page: Page) {
   });
   return { seen, state };
 }
-test.beforeAll(async ({ request }) => {
-  for (const path of ["/", "/stores", "/stores/mstore_first", "/products/prod_tomatoes", "/search"]) {
-    const response = await request.get(base + path);
-    expect(response.ok()).toBe(true);
-    await response.dispose();
-  }
-});
-// Document requests above do not prepare the App Router navigation/chunk path.
+// Global readiness prepares documents/bundles before per-file hook budgets.
+// Document requests alone do not prepare the App Router navigation/chunk path.
 // The regression trace spent 14s on store RSC and 6s on product RSC before the
 // correctly location-scoped product GET could finish. Warm those real routes in
 // an isolated context; no session, location or mock state enters a journey.

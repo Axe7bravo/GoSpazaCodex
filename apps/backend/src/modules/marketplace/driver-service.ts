@@ -70,6 +70,7 @@ export class DriverService {
       .whereNull("s.deleted_at").whereNull("m.deleted_at").whereNull("a.deleted_at")
       .select<Store[]>("s.id", "s.merchant_id", "s.name");
   }
+  async activeStore(id: string, db: Knex) { return this.stores(db).where("s.id", id).first(); }
   private async account(db: Knex, profile: string): Promise<DriverAccountDTO> {
     const p = await db<Profile>("driver_profile").where({ id: profile }).first();
     if (!p) return driverMissing();
@@ -283,9 +284,9 @@ export class DriverService {
   }
   // Reusable locked revalidation. M15 must perform its commitment inside this callback,
   // not treat an earlier eligibility result as a permission lease.
-  async withEligibility<T>(profileId: string, targetStoreId: string, work: (trx: Knex.Transaction, result: Awaited<ReturnType<DriverService["eligibilityInTransaction"]>>) => Promise<T>): Promise<T> {
+  async withEligibility<T>(profileId: string, targetStoreId: string | undefined, work: (trx: Knex.Transaction, result: Awaited<ReturnType<DriverService["eligibilityInTransaction"]>>) => Promise<T>): Promise<T> {
     const observed = await this.open(this.db, profileId);
-    const target = await this.stores(this.db).where("s.id", targetStoreId).first();
+    const target = targetStoreId ? await this.db<Store>("merchant_store").where({ id: targetStoreId }).first() : undefined;
     const merchants = [...new Set([observed?.merchant_id, target?.merchant_id].filter((v): v is string => !!v))].sort();
     return this.db.transaction(async trx => {
       for (const id of merchants) await trx("merchant").where({ id }).forUpdate().first();
@@ -296,9 +297,9 @@ export class DriverService {
       return work(trx, await this.eligibilityInTransaction(trx, p, a, targetStoreId));
     });
   }
-  private async eligibilityInTransaction(trx: Knex.Transaction, p: Profile, a: Affiliation | undefined, targetId: string) {
-    const target = await this.stores(trx).where("s.id", targetId).first();
-    return { ...persistentEligibility(p, a ?? null, target ?? null, await this.nativeIdentityValid(p.auth_identity_id)),
+  private async eligibilityInTransaction(trx: Knex.Transaction, p: Profile, a: Affiliation | undefined, targetId: string | undefined) {
+    const effectiveTarget = targetId ?? a?.merchant_store_id; const target = effectiveTarget ? await this.stores(trx).where("s.id", effectiveTarget).first() : undefined;
+    return { ...(targetId || a?.kind === "MERCHANT" ? persistentEligibility(p, a ?? null, target ?? null, await this.nativeIdentityValid(p.auth_identity_id)) : driverApprovalEligibility(p, a ?? null, await this.nativeIdentityValid(p.auth_identity_id))),
       profile_id: p.id, profile_revision: p.revision, affiliation_id: a?.id ?? null, affiliation_revision: a?.revision ?? null, kind: a?.kind ?? null };
   }
   eligibility(profileId: string, targetStoreId: string) { return this.withEligibility(profileId, targetStoreId, async (_trx, result) => result); }
