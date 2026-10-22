@@ -7,6 +7,7 @@ import { createCustomerOrderClient, OrderError } from "@gospaza/api-client";
 import { SessionBoundary } from "@gospaza/ui/auth";
 import { OrderSummary, orderStatusLabel, orderTime } from "@gospaza/ui/orders";
 import { authClient } from "../auth-client";
+import { OrderDispatch } from "@gospaza/ui/dispatch";
 
 const client = createCustomerOrderClient(process.env.NEXT_PUBLIC_API_URL!, process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? "");
 const copy: Record<OrderOperationStatus, string> = {
@@ -55,6 +56,8 @@ function Content({ id }: { id: string }) {
       <p>{copy[order.operational_status]}</p>
       <p>{order.store.name} · Placed {orderTime(order.created_at)}</p>
       <OrderSummary order={order} />
+      {order.operational_status === "ACCEPTED" && <OrderDispatch id={order.id} actor="customer"
+        baseUrl={process.env.NEXT_PUBLIC_API_URL!} publishableKey={process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""} />}
       {order.operational_status !== "REJECTED" && <ShortagePanel key={order.id} order={order} />}
     </>}
   </section>;

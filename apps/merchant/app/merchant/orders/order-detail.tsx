@@ -6,6 +6,7 @@ import { OrderSummary, orderStatusLabel, orderTime } from "@gospaza/ui/orders";
 import { OrderError } from "@gospaza/api-client";
 import { orderClient, orderError } from "../../order-client";
 import { useMerchant } from "../shell";
+import { OrderDispatch } from "@gospaza/ui/dispatch";
 
 function Detail({ id, mayDecide }: { id: string; mayDecide: boolean }) {
   const [order, setOrder] = useState<MerchantOrder | null>(null);
@@ -89,6 +90,7 @@ function Detail({ id, mayDecide }: { id: string; mayDecide: boolean }) {
         {order.rejection_reason && <p>Rejection reason: {order.rejection_reason}</p>}
       </>}
       <OrderSummary order={order} />
+      {order.operational_status === "ACCEPTED" && <OrderDispatch id={order.id} actor="merchant" baseUrl={process.env.NEXT_PUBLIC_API_URL!} />}
       {mayDecide && order.operational_status === "PENDING_ACCEPTANCE" && <section aria-label="Order decision">
         {!confirmation ? <div className="order-actions">
           <button disabled={disabled} onClick={() => setConfirmation("accept")}>Accept</button>

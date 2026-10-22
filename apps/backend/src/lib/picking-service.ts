@@ -71,7 +71,16 @@ export class PickingService {
     }
     const resolutions = session ? await resolutionRows(trx, session.id) : [];
     for (const line of lines) omittedFor(line, resolutions);
-    return { operation, order, nativeLines, fingerprint, session, lines, resolutions };
+    return { operation, order, nativeLines, fingerprint, session, lines, resolutions, handoff };
+  }
+  // Internal M15 handoff. Caller holds the merchant lock in the supplied transaction.
+  // Keep M12/M13 accounting and native evidence in their existing owner.
+  async completedForDispatch(trx: Knex.Transaction, merchantId: string, storeId: string, orderId: string) {
+    const state = await this.load(trx, { merchant: { id: merchantId }, store: { id: storeId } }, orderId);
+    if (!state.session || state.session.status !== "COMPLETED" || !state.session.completed_at || !state.lines.length
+      || state.lines.some(line => !accounted(line.ordered_quantity_at_start, line.picked_quantity, omittedFor(line, state.resolutions)))
+      || !await trx("pick_event").where({ pick_session_id: state.session.id, revision: state.session.revision, action: "COMPLETE" }).first()) throw pickingConflict();
+    return { order: state.order, operation: state.operation, handoff: state.handoff, session: state.session };
   }
   private project(state: Awaited<ReturnType<PickingService["load"]>>): PickingOrder {
     return {

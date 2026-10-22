@@ -90,6 +90,9 @@ async function mock(page: Page, role: MerchantMemberRole = "OWNER") {
     }
     if (url.pathname.startsWith("/merchant/orders") && state.role === "PICKER") { await reply({}, 403); return; }
     if (state.outage) { await reply({ message: "private diagnostic" }, 503); return; }
+    if ([path + "/delivery", "/store/gospaza/orders/order_fixture/delivery"].includes(url.pathname) && method === "GET") {
+      await reply({ status: "PREPARING" }); return;
+    }
     if (url.pathname === "/merchant/orders" && method === "GET") {
       const limit = Number(url.searchParams.get("limit") ?? 20), offset = Number(url.searchParams.get("offset") ?? 0);
       const orders = Array.from({ length: 21 }, (_, index) => index === 0 ? state.order

@@ -1,3 +1,4 @@
+import { dispatchPolicy } from "./src/modules/marketplace/dispatch-policy";
 import { yocoConfiguration, reconciliationWorkerEnabled } from "./src/lib/yoco-config";
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { AUTH_METHODS } from "./src/lib/auth-config";
@@ -7,6 +8,7 @@ import { backendEnv } from "@gospaza/config/env";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 const env = backendEnv(process.env);
+dispatchPolicy(process.env);
 const yoco = yocoConfiguration(process.env);
 reconciliationWorkerEnabled(process.env);
 invitationLifetimeMs(process.env); // Validate invitation expiry at startup.

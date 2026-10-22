@@ -12,6 +12,7 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/driver\/(?:availability|location|offers)(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: "/hooks/gospaza/yoco", method: "POST", bodyParser: { preserveRawBody: true, sizeLimit: "64kb" } },
     { matcher: /^\/store\/payment-collections(?:\/.*)?$/i, middlewares: [blockNativePayments] },
     // A partial native Order is not a verified GoSpaza checkout outcome.

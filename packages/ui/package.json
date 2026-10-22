@@ -9,6 +9,7 @@
     "./orders": "./src/orders.tsx",
     "./driver-resource": "./src/driver-resource.ts",
     "./drivers": "./src/drivers.tsx",
+    "./dispatch": "./src/dispatch.tsx",
     "./drivers.css": "./src/drivers.css"
   },
   "scripts": {

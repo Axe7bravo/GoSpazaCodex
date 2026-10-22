@@ -5,6 +5,7 @@ import type { DriverAccountDTO, DriverAffiliationInput } from "@gospaza/contract
 import { useDriverResource } from "@gospaza/ui/driver-resource";
 import { DriverFeedback, DriverPages, DriverSummary, driverLabel } from "@gospaza/ui/drivers";
 import { authClient, driverClient } from "./auth-client";
+import DispatchPanel from "./dispatch-panel";
 const denied = () => window.location.replace("/login");
 const historyLoad = () => driverClient.history();
 
@@ -88,6 +89,7 @@ export default function Page() {
     {account && <>
       <h2>{account.profile.display_name || "Your driver profile"}</h2>
       <DriverSummary account={account} />
+      <DispatchPanel eligible={account.eligibility.eligible} />
       {editable ? <ProfileForm key={"profile:" + account.profile.revision} account={account} busy={resource.busy}
         save={fields => resource.mutate(() => driverClient.update(account.profile.revision, fields))} />
         : <section className="driver-card"><h2>Profile details</h2><p>{account.profile.display_name}</p><p>{account.profile.contact_phone}</p><p>Profile details are read-only in this state.</p></section>}

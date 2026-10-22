@@ -48,6 +48,10 @@ async function fixture(page: Page, role: "OWNER" | "MANAGER" | "PICKER" = "OWNER
     if (path === "/admin/gospaza/me") { await reply({ actor: { type: "user", id: "user_fixture" } }); return; }
     if (state.outage) { await reply({ message: "private diagnostic" }, 503); return; }
     if (path === "/driver/onboarding/me") { await reply({ onboarding: true }); return; }
+    if (path === "/driver/availability") {
+      await reply({ intent: "OFFLINE", revision: 0, generation: null, effective: "OFFLINE", location_fresh: false, available_since: null }); return;
+    }
+    if (path === "/driver/dispatch/current") { await reply({ commitment: null }); return; }
     if (path === "/driver/profile/bootstrap") { state.hasProfile = true; state.writes.push({ path, body: request.postDataJSON() }); await reply(projection()); return; }
     if (path === "/driver/profile" && method === "GET") { await reply(state.hasProfile ? projection() : {}, state.hasProfile ? 200 : 401); return; }
     if (path === "/driver/affiliation-targets") { await reply({ items: [{ id: "store_fixture", name: "Fixture Shop" }], limit: 20, offset: 0 }); return; }
