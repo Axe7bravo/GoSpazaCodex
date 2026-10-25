@@ -58,7 +58,15 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
   const faultName = "checkout_fixture_" + randomUUID().replaceAll("-", "");
   let faultInstalled = false;
   async function http(cookie: string, method: string, route: string, body?: unknown) {
-    const response = await request(route, cookie, method, body);
+    const started = Date.now();
+    let response: Response;
+    try {
+      response = await request(route, cookie, method, body);
+    } catch (cause) {
+      throw new Error("Verification HTTP request failed before response headers: " + JSON.stringify({
+        method, path: route, elapsed_ms: Date.now() - started,
+      }), { cause });
+    }
     const raw = await response.text();
     let data: unknown;
     try {

@@ -35,7 +35,9 @@
     "test:drivers": "medusa exec ./src/scripts/verify-drivers.ts",
     "test:dispatch": "medusa exec ./src/scripts/verify-dispatch.ts",
     "test:dispatch-orchestration": "medusa exec ./src/scripts/verify-dispatch-orchestration.ts",
-    "test:dispatch-acceptance": "medusa exec ./src/scripts/verify-dispatch-acceptance.ts"
+    "test:dispatch-acceptance": "medusa exec ./src/scripts/verify-dispatch-acceptance.ts",
+    "test:pickup": "medusa exec ./src/scripts/verify-pickup.ts",
+    "test:handoff": "medusa exec ./src/scripts/verify-handoff.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

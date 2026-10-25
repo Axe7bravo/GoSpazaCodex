@@ -6,6 +6,8 @@ export interface AvailabilityRow {
   affiliation_id: string | null; affiliation_revision: number | null;
 }
 export interface DeliveryRow {
+  arrived_at: Date | null; delivered_at: Date | null; handoff_failures: number; tracking_generation: string | null;
+  pickup_managed: boolean; native_fulfillment_id: string | null; picked_up_at: Date | null;
   id: string; order_operation_id: string; medusa_order_id: string; merchant_id: string; merchant_store_id: string;
   pick_session_id: string; reservation_id: string; service_zone_id: string;
   status: DispatchStatus; revision: number; generation: number; mode: DispatchMode; configuration_revision: number;
@@ -14,7 +16,7 @@ export interface DeliveryRow {
 }
 export interface CommitmentRow {
   id: string; delivery_id: string; driver_profile_id: string; generation: number; path: DispatchPath;
-  status: "OFFERED" | "ASSIGNED" | "DECLINED" | "EXPIRED" | "CANCELLED"; revision: number;
+  status: "OFFERED" | "ASSIGNED" | "DECLINED" | "EXPIRED" | "CANCELLED" | "COMPLETED"; revision: number;
   availability_generation: string; affiliation_id: string; profile_revision: number; affiliation_revision: number;
   updated_at?: Date; expires_at: Date; assigned_at: Date | null; decided_at: Date | null; reason: string | null;
 }

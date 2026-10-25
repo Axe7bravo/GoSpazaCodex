@@ -17,8 +17,12 @@ const unavailable = () => new MedusaError(MedusaError.Types.UNEXPECTED_STATE, "D
 // expires. Redis restart requires explicit ONLINE to establish a fresh fence;
 // replaying an old sample after loss cannot repopulate it.
 export class RedisDispatchLocations implements DispatchLocations {
-  constructor(private readonly policy: DispatchPolicy) {}
-  private key(profile: string) { return "gospaza:dispatch:{" + profile + "}"; }
+  constructor(private readonly policy: DispatchPolicy, private readonly purpose: "dispatch" | "tracking" = "dispatch") {}
+  private key(profile: string) { return "gospaza:" + this.purpose + ":{" + profile + "}"; }
+  async clear(profile: string, generation: string) {
+    try { await this.use(r => r.eval("if redis.call('HGET', KEYS[1], 'generation') == ARGV[1] then redis.call('DEL', KEYS[2]) end; return 1",
+      2, this.key(profile) + ":fence", this.key(profile) + ":sample", generation)); } catch { /* SQL terminality revokes reads; TTL bounds residual storage. */ }
+  }
   private async use<T>(work: (redis: Redis) => Promise<T>): Promise<T> {
     if (!process.env.REDIS_URL) throw unavailable();
     const redis = new Redis(process.env.REDIS_URL, { lazyConnect: true, connectTimeout: 2000, commandTimeout: 2000,

@@ -108,7 +108,7 @@ export class DispatchOrchestrator {
   private async schedule(d: DeliveryRow, offset: number) {
     const now = await this.db.transaction(databaseTime);
     let due = new Date(now.getTime() + 5000);
-    if (d.status === "ATTENTION_REQUIRED") due = new Date("9999-01-01T00:00:00Z");
+    if (d.status === "ATTENTION_REQUIRED" || d.status === "DELIVERED") due = new Date("9999-01-01T00:00:00Z");
     else if (d.status === "ASSIGNED") due = new Date(now.getTime() + 60000);
     else if (d.status === "PENDING_DISPATCH" && d.dispatch_not_before && new Date(d.dispatch_not_before) > now)
       due = new Date(d.dispatch_not_before);

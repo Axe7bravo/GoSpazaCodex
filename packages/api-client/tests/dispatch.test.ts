@@ -32,3 +32,42 @@ test("customer dispatch reads use owned order endpoint and publishable key", asy
   };
   assert.deepEqual(await createDispatchClient("http://localhost:9000", fetcher, "pk_fixture").customer("order_fixture"), { status: "ASSIGNED" });
 });
+
+test("pickup uses only driver domain routes and never replays an uncertain physical confirmation", async () => {
+  const calls: { url: URL; init?: RequestInit }[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: new URL(String(url)), init });
+    return init?.method === "POST" ? Response.json({}, { status: 503 }) : Response.json({ pickup: null });
+  };
+  const client = createDispatchClient("http://localhost:9000", fetcher);
+  assert.deepEqual(await client.pickup(), { pickup: null });
+  await assert.rejects(client.confirmPickup("delivery_fixture", 7));
+  assert.deepEqual(calls.map(c => c.url.pathname), ["/driver/deliveries/current", "/driver/deliveries/delivery_fixture/pickup"]);
+  assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), { expected_revision: 7 });
+  for (const c of calls) { assert.equal(c.init?.credentials, "include"); assert.equal(c.init?.cache, "no-store"); }
+});
+
+test("handoff restoration and sensitive reads are authenticated, uncached and actor scoped", async () => {
+  const calls: { url: URL; init?: RequestInit }[] = [];
+  const fetcher: typeof fetch = async (url, init) => { calls.push({ url: new URL(String(url)), init }); return Response.json({}); };
+  const client = createDispatchClient("http://localhost:9000", fetcher, "pk_fixture");
+  await client.latestHandoff(); await client.tracking("order_fixture"); await client.handoffCode("order_fixture");
+  assert.deepEqual(calls.map(c => c.url.pathname), ["/driver/deliveries/latest", "/store/gospaza/orders/order_fixture/tracking", "/store/gospaza/orders/order_fixture/handoff-code"]);
+  for (const call of calls) {
+    assert.equal(call.init?.credentials, "include"); assert.equal(call.init?.cache, "no-store");
+    assert.equal(call.init?.body, undefined); assert.equal(call.url.search, "");
+  }
+});
+
+test("handoff uncertainty never replays a guess or regenerates a code", async () => {
+  const calls: { url: URL; init?: RequestInit }[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: new URL(String(url)), init }); return Response.json({ message: "private native error" }, { status: 503 });
+  };
+  await assert.rejects(createDispatchClient("http://localhost:9000", fetcher).verifyHandoff("delivery_fixture", 7, "314159"),
+    (error: unknown) => error instanceof Error && !/private|314159/.test(error.message));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.url.pathname, "/driver/deliveries/delivery_fixture/handoff/verify");
+  assert.equal(calls[0]?.url.search, "");
+  assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), { expected_revision: 7, code: "314159" });
+});

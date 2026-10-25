@@ -19,7 +19,8 @@ interface Profile { medusa_product_id: string; merchant_id: string; requires_age
 // Internal owner composition. Caller holds the target merchant lock before this
 // method; PickingService owns physical accounting and M10/native linkage.
 export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Transaction,
-  scope: { merchant_id: string; merchant_store_id: string; medusa_order_id: string }, policy: DispatchPolicy) {
+  scope: { merchant_id: string; merchant_store_id: string; medusa_order_id: string }, policy: DispatchPolicy,
+  expectedFulfillmentId?: string) {
   if (!await new DriverService(container).activeStore(scope.merchant_store_id, trx)) return dispatchConflict("DISPATCH_STORE_UNAVAILABLE");
   const state = await new PickingService(container).completedForDispatch(trx, scope.merchant_id, scope.merchant_store_id, scope.medusa_order_id);
   const hold = await trx<Reservation>("delivery_reservation").where({ id: state.handoff.reservation_id,
@@ -38,7 +39,13 @@ export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Tr
   if (!option || !slot || option.medusa_shipping_option_id !== state.handoff.snapshot.shipping_option_id) return dispatchConflict("DISPATCH_SHIPPING");
   const query = container.resolve<{ graph(input: { entity: string; fields: string[]; filters: Record<string, unknown> }): Promise<{ data: unknown[] }> }>(ContainerRegistrationKeys.QUERY);
   const fulfillment = await query.graph({ entity: "order_fulfillment", fields: ["order_id","fulfillment_id"], filters: { order_id: scope.medusa_order_id } });
-  if (fulfillment.data.length) return dispatchConflict("DISPATCH_NATIVE_FULFILLMENT_EXISTS");
+  // M15 admits no fulfillment. After lifecycle handoff M16 admits only the
+  // single fulfillment whose native terminal readback it has verified.
+  if (expectedFulfillmentId) {
+    const rows = z.array(z.object({ order_id: z.string(), fulfillment_id: z.string() })).safeParse(fulfillment.data);
+    if (!rows.success || rows.data.length !== 1 || rows.data[0]?.fulfillment_id !== expectedFulfillmentId
+      || rows.data[0]?.order_id !== scope.medusa_order_id) return dispatchConflict("DISPATCH_NATIVE_FULFILLMENT_EXISTS");
+  } else if (fulfillment.data.length) return dispatchConflict("DISPATCH_NATIVE_FULFILLMENT_EXISTS");
   const shipping = await query.graph({ entity: "shipping_option", fields: ["id", "service_zone_id", "service_zone.fulfillment_set.type"],
     filters: { id: option.medusa_shipping_option_id } });
   const shippingRows = z.array(z.object({ id: z.string(), service_zone_id: z.string(), service_zone: z.object({ fulfillment_set: z.object({ type: z.literal("shipping") }) }) })).safeParse(shipping.data);
@@ -52,7 +59,7 @@ export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Tr
     .where({ merchant_id: scope.merchant_id }).whereNull("deleted_at").orderBy("medusa_product_id").forShare();
   if (profiles.length !== productIds.length) return dispatchConflict("DISPATCH_PRODUCT_EVIDENCE");
   const config = await trx<DispatchConfigRow>("store_dispatch_configuration").where({ merchant_store_id: scope.merchant_store_id }).forShare().first();
-  return { operation: state.operation, session: state.session, hold, zone: { id: zone.id, geometry },
+  return { picking: state, operation: state.operation, session: state.session, hold, zone: { id: zone.id, geometry },
     config, notBefore: dispatchNotBefore(option.mode, new Date(slot.start_at), policy),
     restricted: profiles.some(p => p.requires_age_verification) };
 }

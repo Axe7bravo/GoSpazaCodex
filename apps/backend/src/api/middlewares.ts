@@ -1,4 +1,5 @@
 import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
+import { blockNativeDelivery } from "../lib/pickup-http";
 import { blockNativePayments } from "../lib/checkout-http";
 import { blockNativeShipping } from "../lib/scheduling-http";
 import { blockNativeCarts } from "../lib/cart-http";
@@ -12,6 +13,10 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/driver\/deliveries(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/store\/gospaza\/orders\/[^/]+\/handoff-code(?:\/regenerate)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/admin\/orders\/[^/]+\/(?:fulfillments|cancel)(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
+    { matcher: /^\/admin\/fulfillments(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
     { matcher: /^\/driver\/(?:availability|location|offers)(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: "/hooks/gospaza/yoco", method: "POST", bodyParser: { preserveRawBody: true, sizeLimit: "64kb" } },
     { matcher: /^\/store\/payment-collections(?:\/.*)?$/i, middlewares: [blockNativePayments] },

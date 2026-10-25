@@ -7,6 +7,7 @@ import { resourceId } from "../modules/marketplace/team-policy";
 import { dispatchCommandWorkflow } from "../workflows/dispatch-command";
 import { applicantIdentity } from "./applicant-auth";
 import { DispatchProjection } from "./dispatch-projection";
+import { DeliveryTracking } from "./delivery-tracking";
 export function orderDelivery(actor: "merchant" | "customer") {
   return async (req: MedusaRequest, res: MedusaResponse) => {
     prepare(req, res);
@@ -36,7 +37,11 @@ export async function configuration(req: MedusaRequest, res: MedusaResponse) {
 }
 // Location samples must never enter persisted workflow input/step history.
 export async function location(req: MedusaRequest, res: MedusaResponse) {
-  prepare(req, res); res.json(await new DispatchService(req.scope).location(driverIdentity(req), req.body));
+  prepare(req, res);
+  if (req.body && typeof req.body === "object" && "purpose" in req.body) {
+    res.json(await new DeliveryTracking(req.scope).update(driverIdentity(req), req.body)); return;
+  }
+  res.json(await new DispatchService(req.scope).location(driverIdentity(req), req.body));
 }
 export function command(action: "ONLINE" | "OFFLINE" | "ACCEPT" | "DECLINE" | "CONFIGURE") {
   return async (req: MedusaRequest, res: MedusaResponse) => {
