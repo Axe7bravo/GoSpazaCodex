@@ -4,7 +4,7 @@ import prepareM14 from "./m14-readiness";
 export default async function prepare(config: FullConfig) {
   await prepareM14(config);
   const name = config.configFile?.replaceAll("\\", "/").split("/").pop();
-  if (name !== "playwright.config.ts" && name !== "playwright.m15.config.ts") return;
+  if (name !== "playwright.config.ts" && name !== "playwright.m15.config.ts" && name !== "playwright.m16.config.ts") return;
   const client = await request.newContext();
   try {
     const routes = ["http://localhost:3002/", "http://localhost:3001/merchant/orders/order_fixture", "http://localhost:3000/orders/order_fixture"];

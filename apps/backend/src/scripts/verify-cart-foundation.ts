@@ -18,20 +18,24 @@ import { cleanupFixtureCommerce } from "./fixture-commerce-cleanup";
 import type { CartFoundation } from "@gospaza/contracts";
 import type { DiscoveryInput } from "../lib/discovery-service";
 
-function describeError(error: unknown, depth = 0): object {
+function describeError(error: unknown, seen = new WeakSet<Error>()): object {
   if (!(error instanceof Error)) {
     return { message: typeof error === "string" ? error : "Non-Error rejection" };
   }
+  // Composed milestone verifiers can exceed any fixed wrapper depth. Preserve
+  // the leaf failure while stopping cyclic/shared Error references safely.
+  if (seen.has(error)) return { name: error.name, message: error.message, repeated_reference: true };
+  seen.add(error);
   return {
     name: error.name,
     message: error.message,
     stack: error.stack,
     ...("type" in error && typeof error.type === "string" ? { type: error.type } : {}),
     ...("code" in error && typeof error.code === "string" ? { code: error.code } : {}),
-    ...(depth < 5 && error.cause !== undefined
-      ? { cause: describeError(error.cause, depth + 1) } : {}),
-    ...(depth < 5 && error instanceof AggregateError
-      ? { errors: error.errors.map((cause: unknown) => describeError(cause, depth + 1)) } : {}),
+    ...(error.cause !== undefined
+      ? { cause: describeError(error.cause, seen) } : {}),
+    ...(error instanceof AggregateError
+      ? { errors: error.errors.map((cause: unknown) => describeError(cause, seen)) } : {}),
   };
 }
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createDispatchClient } from "@gospaza/api-client";
 import { useDriverResource } from "@gospaza/ui/driver-resource";
 import { DriverFeedback } from "@gospaza/ui/drivers";
+import DeliveryPanel from "./delivery-panel";
 const client = createDispatchClient(process.env.NEXT_PUBLIC_API_URL!);
 const denied = () => window.location.replace("/login");
 const load = async () => {
@@ -80,8 +81,9 @@ export default function DispatchPanel({ eligible }: { eligible: boolean }) {
           <button disabled={resource.busy || expired}
             onClick={() => void resource.mutate(() => client.decide(offer.id, "decline", offer.revision))}>Decline offer</button>
         </>}
-        {offer.status === "ASSIGNED" && <p>Your assignment remains recorded when you go offline. Pickup controls are not available yet.</p>}
+        {offer.status === "ASSIGNED" && <p>Your assignment remains recorded when you go offline.</p>}
       </article>}
     </>}
+    <DeliveryPanel changed={refresh} />
   </section>;
 }

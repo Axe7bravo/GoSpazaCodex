@@ -1,4 +1,7 @@
 import StoreDispatchConfiguration from "./models/dispatch-configuration";
+import PickupOperation from "./models/pickup-operation";
+import HandoffGeneration from "./models/handoff-generation";
+import DeliveryCompletion from "./models/delivery-completion";
 import DriverAvailability from "./models/driver-availability";
 import DeliveryOperation from "./models/delivery-operation";
 import DispatchCommitment from "./models/dispatch-commitment";
@@ -67,7 +70,7 @@ const APPS = "merchant_application";
 const DOCS = "merchant_application_document";
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
 const conflict = (message: string) => new MedusaError(MedusaError.Types.NOT_ALLOWED, message);
-export default class MarketplaceService extends MedusaService({ StoreDispatchConfiguration, DriverAvailability, DeliveryOperation, DispatchCommitment, DispatchEvent, DriverProfile, DriverAffiliation, DriverEvent, OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
+export default class MarketplaceService extends MedusaService({ HandoffGeneration, DeliveryCompletion, PickupOperation, StoreDispatchConfiguration, DriverAvailability, DeliveryOperation, DispatchCommitment, DispatchEvent, DriverProfile, DriverAffiliation, DriverEvent, OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
   private db: Knex;
   constructor(container: { __pg_connection__: Knex }) { super(container); this.db = container.__pg_connection__; }
   // All SQL is confined to this module's tables. Row locks serialize submit/edit/file mutations.

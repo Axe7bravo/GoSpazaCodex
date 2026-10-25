@@ -6,6 +6,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { ExecArgs, IAuthModuleService, IInventoryService, IOrderModuleService, IPaymentModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import verifyOrderOperations from "./verify-order-operations";
+import type { OrderOperationsVerificationFixture } from "./verify-order-operations";
 import { cleanupShortages } from "./shortage-verification-cleanup";
 import { DriverService } from "../modules/marketplace/driver-service";
 import { PickingService } from "../lib/picking-service";
@@ -22,8 +23,19 @@ import type { CommitmentRow } from "../modules/marketplace/dispatch-rows";
 
 const availability = z.object({ revision: z.number(), generation: z.string().nullable(), intent: z.string(), effective: z.string(), location_fresh: z.boolean() });
 const decision = { expected_revision: 1 };
-export default async function verifyDispatch(args: ExecArgs, orchestration = false, acceptance = false) {
+export interface DispatchVerificationFixture {
+  orders: OrderOperationsVerificationFixture;
+  completed: (label: string, omitted?: boolean, quantity?: number, picked?: number) => ReturnType<OrderOperationsVerificationFixture["complete"]>;
+  driver: (label: string, store?: string) => Promise<{ identity: string; cookie: string; id: string }>;
+  online: (who: { cookie: string }) => Promise<string>;
+  dispatch: DispatchService;
+  user: string;
+  http: (cookie: string, method: string, path: string, body?: unknown, status?: number) => Promise<unknown>;
+}
+export default async function verifyDispatch(args: ExecArgs, orchestration = false, acceptance = false,
+  extension?: (fixture: DispatchVerificationFixture) => Promise<void>) {
   if (process.env.DISPATCH_WORKER_ENABLED === "true") throw new Error("Stop the automatic dispatch worker for isolated dispatch verification.");
+  if (process.env.PICKUP_WORKER_ENABLED === "true") throw new Error("Disable PICKUP_WORKER_ENABLED in backend and verifier for isolated verification.");
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) throw new Error("M15-B verification requires REDIS_URL and the normal local dispatch policy.");
   await verifyOrderOperations(args, async f => {
@@ -73,15 +85,16 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
       await http(who.cookie, "PUT", "/driver/location", { ...location, generation: a.generation, sequence: 1 });
       return a.generation;
     }
-    async function completed(label: string, omitted = false) {
-      const order = await f.complete(prefix + label); orderIds.push(order.orderId);
+    async function completed(label: string, omitted = false, quantity = 1, picked?: number) {
+      const order = await f.complete(prefix + label, undefined, quantity); orderIds.push(order.orderId);
       await operations.ensure(order.orderId);
       await operations.decide(f.ownerA.identity, order.orderId, "accept", { expected_revision: 0, confirmed: true });
-      if (omitted) await picking.customerShortages(order.person.id, order.orderId, "PREFERENCE", { preference: "NO_SUBSTITUTION", expected_revision: 0 });
+      const shortage = omitted || picked !== undefined && picked < quantity;
+      if (shortage) await picking.customerShortages(order.person.id, order.orderId, "PREFERENCE", { preference: "NO_SUBSTITUTION", expected_revision: 0 });
       let state = (await picking.mutate(f.picker.identity, order.orderId, "CLAIM", {})).picking;
       for (const line of state.lines) {
         state = (await picking.mutate(f.picker.identity, order.orderId, "LINE", { expected_revision: state.revision,
-          picked_quantity: omitted ? 0 : line.ordered_quantity, shortage_recorded: omitted }, line.id)).picking;
+          picked_quantity: omitted ? 0 : picked ?? line.ordered_quantity, shortage_recorded: shortage }, line.id)).picking;
       }
       await picking.mutate(f.picker.identity, order.orderId, "COMPLETE", { expected_revision: state.revision, confirmed: true });
       return order;
@@ -580,18 +593,29 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
         assert.equal((await db("dispatch_commitment").where({ id: fallback.id }).first()).status, "ASSIGNED");
         assert.equal((await db("delivery_operation").where({ id: d7.id }).first()).status, "ATTENTION_REQUIRED");
       }
+      if (extension) await extension({ orders: f, completed, driver, online, dispatch, user, http });
     } catch (error) { failures.push(error); }
     // Fixture-scoped only; no shared Redis clear, no disabling constraints/triggers.
     for (const cookie of cookies) { try { await http(cookie, "DELETE", "/auth/session"); } catch (error) { failures.push(error); } }
     try {
       const redis = new Redis(redisUrl);
-      try { for (const id of profiles) await redis.del(...["sample","fence","rate"].map(s => "gospaza:dispatch:{" + id + "}:" + s)); }
+      try {
+        for (const id of profiles) await redis.del(...["sample","fence","rate"].map(s => "gospaza:dispatch:{" + id + "}:" + s));
+        const trackingCommitments: { id: string }[] = await db("dispatch_commitment").select("id")
+          .whereIn("delivery_id", db("delivery_operation").select("id").whereIn("medusa_order_id", orderIds));
+        for (const { id } of trackingCommitments) await redis.del(...["sample","fence","rate"].map(s => "gospaza:tracking:{" + id + "}:" + s));
+      }
       finally { redis.disconnect(); }
       await db.transaction(async trx => {
         const deliveryIds = trx("delivery_operation").select("id").whereIn("medusa_order_id", orderIds);
         const availabilityIds = trx("driver_availability").select("id").whereIn("driver_profile_id", profiles);
         const configs = trx("store_dispatch_configuration").select("id").whereIn("merchant_store_id", [first.store.id,second.store.id]);
         await trx("dispatch_event").where(builder => builder.whereIn("target_id", deliveryIds).orWhereIn("target_id", availabilityIds).orWhereIn("target_id", configs)).delete();
+        await trx("pickup_work").whereIn("delivery_id", deliveryIds).delete();
+        await trx("delivery_completion").whereIn("delivery_id", deliveryIds).delete();
+        await trx("handoff_rate").whereIn("delivery_id", deliveryIds).delete();
+        await trx("handoff_generation").whereIn("delivery_id", deliveryIds).delete();
+        await trx("pickup_operation").whereIn("delivery_id", deliveryIds).delete();
         await trx("dispatch_commitment").whereIn("delivery_id", deliveryIds).delete();
         await trx("dispatch_work").whereIn("delivery_id", deliveryIds).delete();
         await trx("delivery_operation").whereIn("medusa_order_id", orderIds).delete();

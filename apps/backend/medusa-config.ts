@@ -1,4 +1,5 @@
 import { dispatchPolicy } from "./src/modules/marketplace/dispatch-policy";
+import { handoffSecret } from "./src/modules/marketplace/handoff-policy";
 import { yocoConfiguration, reconciliationWorkerEnabled } from "./src/lib/yoco-config";
 import { defineConfig, loadEnv } from "@medusajs/framework/utils";
 import { AUTH_METHODS } from "./src/lib/auth-config";
@@ -8,6 +9,7 @@ import { backendEnv } from "@gospaza/config/env";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 const env = backendEnv(process.env);
+if (["staging", "production"].includes(env.appEnv) || process.env.HANDOFF_OTP_SECRET) handoffSecret(process.env);
 dispatchPolicy(process.env);
 const yoco = yocoConfiguration(process.env);
 reconciliationWorkerEnabled(process.env);

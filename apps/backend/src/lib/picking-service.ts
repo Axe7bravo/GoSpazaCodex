@@ -80,7 +80,10 @@ export class PickingService {
     if (!state.session || state.session.status !== "COMPLETED" || !state.session.completed_at || !state.lines.length
       || state.lines.some(line => !accounted(line.ordered_quantity_at_start, line.picked_quantity, omittedFor(line, state.resolutions)))
       || !await trx("pick_event").where({ pick_session_id: state.session.id, revision: state.session.revision, action: "COMPLETE" }).first()) throw pickingConflict();
-    return { order: state.order, operation: state.operation, handoff: state.handoff, session: state.session };
+    return { order: state.order, operation: state.operation, handoff: state.handoff, session: state.session,
+      physical: state.lines.map(line => ({ id: line.medusa_order_line_id, ordered: line.ordered_quantity_at_start,
+        picked: line.picked_quantity, omitted: omittedFor(line, state.resolutions) })),
+      financial_review_required: state.resolutions.some(row => row.financial_review_required) };
   }
   private project(state: Awaited<ReturnType<PickingService["load"]>>): PickingOrder {
     return {

@@ -14,6 +14,7 @@ import type { AvailabilityRow, CommitmentRow, DeliveryRow, DispatchConfigRow } f
 import { RedisDispatchLocations } from "./dispatch-location";
 import type { DispatchLocations } from "./dispatch-location";
 import { dispatchReadiness } from "./dispatch-readiness";
+import { PickupService } from "./pickup-service";
 
 type Eligibility = Awaited<ReturnType<DriverService["eligibility"]>>;
 type Ready = Awaited<ReturnType<typeof dispatchReadiness>>;
@@ -345,11 +346,16 @@ export class DispatchService {
   }
   // C will call these bounded primitives; B installs no subscriber, timer or worker.
   async reconcile(id: string) {
+    const delivery = await this.db<DeliveryRow>("delivery_operation").where({ id }).first();
+    if (delivery?.pickup_managed) {
+      await new PickupService(this.container).observe(id);
+      return await this.db<DeliveryRow>("delivery_operation").where({ id }).first() ?? dispatchMissing();
+    }
     const observed = await this.db<CommitmentRow>("dispatch_commitment").where({ delivery_id: id }).whereIn("status", active).first();
     return this.withDelivery(id, observed?.driver_profile_id, async (trx, d, e) => {
       const c = await trx<CommitmentRow>("dispatch_commitment").where({ delivery_id: id }).whereIn("status", active).forUpdate().first();
       if ((observed?.id ?? null) !== (c?.id ?? null)) return dispatchConflict();
-      if (d.status === "ATTENTION_REQUIRED") return d;
+      if (d.status === "ATTENTION_REQUIRED" || d.pickup_managed) return d; // M16 owns native fulfillment-aware observation.
       const r = await this.ready(trx, d), now = await databaseTime(trx);
       if (c?.status === "ASSIGNED") {
         if (!r || !e?.eligible || e.affiliation_id !== c.affiliation_id || e.affiliation_revision !== c.affiliation_revision
