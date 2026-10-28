@@ -140,7 +140,7 @@ test("owner creates a simple published restricted product", async ({ page }) => 
   await page.getByLabel("Product title", { exact: true }).fill("Local juice");
   await page.getByLabel("Price (ZAR)", { exact: true }).fill("109.99");
   await page.getByLabel("Stocked units", { exact: true }).fill("12");
-  await page.getByLabel("Alcohol / restricted product", { exact: true }).check();
+  await page.getByLabel("Proposed alcohol / restricted product", { exact: true }).check();
   await page.getByRole("combobox", { name: "Product status", exact: true }).selectOption("published");
   await transition(page, {
     url: base + "/merchant/products/prod_created",

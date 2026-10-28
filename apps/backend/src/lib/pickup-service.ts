@@ -29,7 +29,7 @@ export class PickupService {
     dispatchParse(resourceId, id);
     const actor = identity ? await this.drivers.profileForIdentity(identity) : null;
     const observed = await this.db<DeliveryRow>("delivery_operation").where({ id }).first();
-    const statuses = includeCompleted ? ["ASSIGNED", "COMPLETED"] : ["ASSIGNED"];
+    const statuses = includeCompleted ? ["ASSIGNED", "COMPLETED", "RETURNED"] : ["ASSIGNED"];
     const assigned = await this.db<CommitmentRow>("dispatch_commitment").where({ delivery_id: id }).whereIn("status", statuses).first();
     if (!observed || !assigned || actor && actor.id !== assigned.driver_profile_id) return dispatchMissing();
     return this.drivers.withEligibility(assigned.driver_profile_id, observed.merchant_store_id, async (trx, e) => {
@@ -125,6 +125,7 @@ export class PickupService {
       return new HandoffService(this.container).observe(id);
     }
     return this.locked(id, undefined, async s => {
+      if (await s.trx("restricted_return").where({ delivery_id: id }).first()) return;
       const ops = await this.operations(s.trx, id), prepare = ops.find(o => o.action === "PREPARE"), ship = ops.find(o => o.action === "SHIP");
       const op = ship ?? prepare;
       if (!op) return;
@@ -185,7 +186,7 @@ export class PickupService {
     return this.locked(id, identity, async s => {
       // Completion can win during observation. A completed commitment is no
       // longer a current pickup, but its historical ownership remains intact.
-      if (s.c.status === "COMPLETED") return { pickup: null };
+      if (s.c.status === "COMPLETED" || s.c.status === "RETURNED") return { pickup: null };
       const ops = await this.operations(s.trx, s.d.id), prepare = ops.find(o => o.action === "PREPARE");
       let ready = false;
       if (!s.d.picked_up_at && !ops.some(o => o.action === "SHIP") && prepare?.state === "SUCCEEDED" && s.d.status === "ASSIGNED") {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { reviewFixtureGrocery } from "./fixtures/restricted-commerce";
 import { randomBytes, randomUUID } from "node:crypto";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { ExecArgs, IApiKeyModuleService, IAuthModuleService, ICartModuleService, ICustomerModuleService, IProductModuleService } from "@medusajs/framework/types";
@@ -149,6 +150,7 @@ export default async function verifyCartFoundation(
           variants: [{ title: "Default", sku: prefix + suffix, price_minor: 1099, stocked_quantity: 20 }] },
       } });
       products.push(productId);
+      await reviewFixtureGrocery(container, productId);
       const [product] = await nativeProducts(container, [productId]);
       assert.ok(product?.variants[0]);
       return { merchantId: tenant.merchant.id, ...topology, variantId: product.variants[0].id };

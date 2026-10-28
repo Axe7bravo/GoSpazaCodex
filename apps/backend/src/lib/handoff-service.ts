@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { MedusaContainer } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
 import type { HandoffDTO, HandoffCodeDTO } from "@gospaza/contracts";
 import { PickupService, type PickupScope } from "./pickup-service";
 import { NativePickup } from "./pickup-native";
 import { NativeHandoff } from "./handoff-native";
+import { RecipientService, recipientSatisfied, returnFor } from "./recipient-service";
 import { DriverService } from "../modules/marketplace/driver-service";
 import { RedisDispatchLocations } from "./dispatch-location";
 import { dispatchPolicy } from "../modules/marketplace/dispatch-policy";
@@ -44,6 +45,7 @@ export class HandoffService {
       await this.throttle(s, scope);
     }, true);
   }
+  async admitRecipient(id: string, identity: string) { await this.rate(id,identity,"driver-recipient"); }
   private async event(s: PickupScope, action: string, patch: Partial<DeliveryRow> = {}, actor = "system", customerId?: string) {
     const now = await this.time(s.trx), revision = s.d.revision + 1;
     await s.trx("delivery_operation").where({ id: s.d.id }).update({ ...patch, revision, updated_at: now });
@@ -52,7 +54,7 @@ export class HandoffService {
       occurred_at: now, evidence: JSON.stringify({ commitment_id: s.c.id, ...(customerId ? { customer_id: customerId } : {}) }) });
     Object.assign(s.d, patch, { revision });
   }
-  private async shipment(s: PickupScope, validate = true) {
+  async shipment(s: PickupScope, validate = true) {
     if (s.d.status !== "ASSIGNED" || !s.d.picked_up_at || !s.d.native_fulfillment_id || s.c.status !== "ASSIGNED"
       || !s.e.eligible || s.e.affiliation_id !== s.c.affiliation_id || s.e.kind !== s.c.path) throw handoffError();
     const ops = await s.trx<PickupOperation>("pickup_operation").where({ delivery_id: s.d.id }).orderBy("action").forUpdate();
@@ -64,7 +66,7 @@ export class HandoffService {
     return { ship, prepare };
   }
   private dto(s: PickupScope, op?: DeliveryCompletion): HandoffDTO {
-    return { delivery_id: s.d.id, revision: s.d.revision,
+    return { delivery_id: s.d.id, revision: s.d.revision, restricted_content_present: s.d.restricted_content_present,
       state: s.d.status === "DELIVERED" ? "DELIVERED" : s.d.status === "ATTENTION_REQUIRED" || op && op.state !== "SUCCEEDED" ? "ATTENTION_REQUIRED"
         : s.d.arrived_at ? "ARRIVED" : s.d.picked_up_at ? "IN_TRANSIT" : "UNAVAILABLE",
       arrived_at: s.d.arrived_at ? new Date(s.d.arrived_at).toISOString() : null,
@@ -107,7 +109,7 @@ export class HandoffService {
     await this.rate(id, undefined, "customer-code");
     return this.pickup.locked(id, undefined, async (s): Promise<HandoffCodeDTO> => {
       const rows = await this.generations(s), current = rows.at(-1), op = await this.operation(s);
-      if (!s.d.arrived_at || s.d.status !== "ASSIGNED" || s.c.status !== "ASSIGNED" || op || !current)
+      if (!s.d.arrived_at || s.d.status !== "ASSIGNED" || s.c.status !== "ASSIGNED" || op || !current || await returnFor(s))
         return { state: "UNAVAILABLE", code: null, expires_at: null, revision: s.d.revision };
       await this.shipment(s);
       const now = await this.time(s.trx);
@@ -138,7 +140,16 @@ export class HandoffService {
       if (existing) return { operation: existing, dispatch: false }; // consumed authorization: readback only
       const { ship } = await this.shipment(s);
       if (!s.d.arrived_at || s.d.revision !== input.expected_revision) throw handoffError();
-      if (handoffCompliance(s.d.restricted_content_present) !== "SATISFIED") return { error: "HANDOFF_COMPLIANCE_REQUIRED" };
+      if (!await recipientSatisfied(s,current?.id)) return { error: "HANDOFF_COMPLIANCE_REQUIRED" };
+      if (s.d.restricted_content_present) {
+        const recipient=new RecipientService(this.container);
+        try { await recipient.supplyValid(s); }
+        catch(error) {
+          if(!MedusaError.isMedusaError(error)) throw error;
+          await recipient.blockChangedSupply(s);
+          return {error:"HANDOFF_COMPLIANCE_REQUIRED"};
+        }
+      }
       const now = await this.time(s.trx);
       if (!current || current.state !== "ACTIVE" || now >= new Date(current.expires_at)
         || current.failed_attempts >= policy.generationFailures || s.d.handoff_failures >= policy.deliveryFailures) return { error: "HANDOFF_UNAVAILABLE" };
@@ -209,6 +220,9 @@ export class HandoffService {
   async presentation(s: PickupScope): Promise<HandoffDTO> {
       const generations = await this.generations(s), last = generations.at(-1), op = await this.operation(s);
       const result = this.dto(s, op);
+      const ret = await returnFor(s);
+      if (ret) return { ...result, state: ret.state, compliance_required: false };
+      result.compliance_required = !await recipientSatisfied(s,last?.id);
       if (result.state === "ARRIVED" && last && generations.length >= policy.generations
         && (last.state !== "ACTIVE" || await this.time(s.trx) >= new Date(last.expires_at))) result.state = "ATTENTION_REQUIRED";
       if (result.state !== "DELIVERED" && (!s.e.eligible || s.e.affiliation_id !== s.c.affiliation_id)) result.state = "ATTENTION_REQUIRED";
@@ -217,7 +231,7 @@ export class HandoffService {
   async latest(identity: string): Promise<{ handoff: HandoffDTO | null }> {
     const profile = await new DriverService(this.container).profileForIdentity(identity);
     const row = await this.db<{ delivery_id: string }>("dispatch_commitment")
-      .where({ driver_profile_id: profile.id }).whereIn("status", ["ASSIGNED", "COMPLETED"])
+      .where({ driver_profile_id: profile.id }).whereIn("status", ["ASSIGNED", "COMPLETED", "RETURNED"])
       .orderByRaw("case when status='ASSIGNED' then 0 else 1 end").orderBy("updated_at", "desc").orderBy("id").first();
     return { handoff: row ? await this.read(identity, row.delivery_id) : null };
   }

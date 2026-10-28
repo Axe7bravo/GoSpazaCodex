@@ -1,6 +1,7 @@
 import type { AuthenticatedMedusaRequest, MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { MedusaError } from "@medusajs/framework/utils";
 import { CheckoutService } from "./checkout-service";
+import { RestrictedCommerce } from "./restricted-commerce";
 
 export const checkoutHandler = (operation: "read" | "prepare" | "confirm" | "abandon") =>
   async (req: MedusaRequest, res: MedusaResponse) => {
@@ -33,7 +34,10 @@ export const checkoutHandler = (operation: "read" | "prepare" | "confirm" | "aba
           res.status(404).json({ code: "CHECKOUT_UNAVAILABLE", message: "Cart, address or checkout unavailable." }); return;
         }
         if (error.type === MedusaError.Types.CONFLICT) {
+          await new RestrictedCommerce(req.scope).blocked(actor.actor_id,error.message);
           const codes = ["CHECKOUT_FROZEN", "CHECKOUT_RECONFIRM", "CHECKOUT_CART_UNAVAILABLE",
+            "PURCHASER_VERIFICATION_UNAVAILABLE", "PURCHASER_VERIFICATION_NOT_VERIFIED", "PURCHASER_VERIFICATION_EXPIRED",
+            "CLASSIFICATION_REVIEW_REQUIRED", "RESTRICTED_STORE_UNAVAILABLE", "RESTRICTED_CATEGORY_UNAVAILABLE", "RESTRICTED_TRADING_CLOSED",
             "DELIVERY_SELECTION_STALE", "DELIVERY_UNAVAILABLE"];
           res.status(409).json({ code: codes.includes(error.message) ? error.message : "CHECKOUT_REFRESH_REQUIRED",
             message: "Refresh checkout and delivery selection before continuing." }); return;

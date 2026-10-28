@@ -8,6 +8,7 @@ import { AuthError } from "@gospaza/api-client";
 import { catalogueClient, cents, zar } from "../../catalogue-client";
 import { merchantError } from "../../merchant-client";
 import { useMerchant } from "../shell";
+import Classification from "./classification-panel";
 
 type VariantForm = { id?: string; title: string; sku: string; price: string; stock: string };
 interface Form {
@@ -104,7 +105,8 @@ export default function ProductEditor({ id }: { id?: string }) {
     {loaded && <form onSubmit={save} className="application-fields" aria-busy={busy}>
       <label>Product title<input required maxLength={200} value={form.title} disabled={!mayManage || busy} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
       <label>Description<textarea maxLength={10000} value={form.description} disabled={!mayManage || busy} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-      <label><input type="checkbox" checked={form.requires_age_verification} disabled={!mayManage || busy} onChange={(e) => setForm({ ...form, requires_age_verification: e.target.checked })} />Alcohol / restricted product</label>
+      <label><input type="checkbox" checked={form.requires_age_verification} disabled={!mayManage || busy} onChange={(e) => setForm({ ...form, requires_age_verification: e.target.checked })} />Proposed alcohol / restricted product</label>
+      <p>This is a merchant proposal. Only platform review establishes the authoritative restriction classification.</p>
       <label>Product status<select value={form.status} disabled={!mayManage || busy} onChange={(e) => setForm({ ...form, status: e.target.value === "published" ? "published" : "draft" })}>
         <option value="draft">Draft</option><option value="published">Published</option>
       </select></label>
@@ -134,5 +136,6 @@ export default function ProductEditor({ id }: { id?: string }) {
         {mayManage && <button disabled={busy} onClick={() => void removeImage(image.id)}>Remove image</button>}
       </div>)}</div>
     </section>}
+    {id && loaded && mayManage && <Classification key={id + JSON.stringify(product)} id={id} />}
   </div>;
 }

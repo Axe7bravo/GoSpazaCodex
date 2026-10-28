@@ -1,4 +1,6 @@
 import type { MedusaContainer } from "@medusajs/framework/types";
+import { RestrictedCommerce } from "./restricted-commerce";
+import type { PurchaserEligibilityProvider } from "../modules/marketplace/restricted-policy";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
 import type { PaymentInitiationResult } from "@gospaza/contracts";
@@ -24,9 +26,11 @@ const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Checkout una
 export class PaymentInitiationService {
   private db: Knex;
   private operations: PgYocoOperationStore;
-  constructor(private container: MedusaContainer, private customerId: string) {
+  private compliance: RestrictedCommerce;
+  constructor(private container: MedusaContainer, private customerId: string, purchaser?: PurchaserEligibilityProvider) {
     this.db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
     this.operations = new PgYocoOperationStore(this.db);
+    this.compliance = new RestrictedCommerce(container, purchaser);
   }
 
   private result(attempt: Attempt, state: PaymentInitiationResult["state"], redirect: string | null = null): PaymentInitiationResult {
@@ -39,10 +43,11 @@ export class PaymentInitiationService {
     const input = schedulingInput(checkoutAbandonInput, value);
     return new CartFoundationService(this.container, this.customerId).withCurrent(input.cart_id, async ({ context, valid }) => {
       let active = await currentCheckout(this.db, context.id);
-      let attempt = await this.db<Attempt>("checkout_attempt")
+      const initialAttempt = await this.db<Attempt>("checkout_attempt")
         .where({ id: input.attempt_id, cart_context_id: context.id, medusa_cart_id: input.cart_id })
         .whereNull("deleted_at").first();
-      if (!attempt) throw missing();
+      if (!initialAttempt) throw missing();
+      const attempt = initialAttempt;
       if (attempt.checkout_revision !== input.checkout_revision) throw conflict("CHECKOUT_RECONFIRM");
       if (attempt.closed_at || active?.id !== attempt.id) return this.result(attempt, "expired");
       if (attempt.payment_accepted_at || attempt.state === "RECOVERY_REQUIRED") {
@@ -53,6 +58,8 @@ export class PaymentInitiationService {
       const snapshot = checkoutSnapshot.parse(attempt.snapshot);
       if (snapshot.customer_id !== this.customerId || snapshot.merchant_id !== context.merchant_id
         || snapshot.merchant_store_id !== context.merchant_store_id) throw missing();
+      return commerceLock(this.container, context.merchant_id, async () => {
+      let attempt: Attempt = initialAttempt;
       if (attempt.state === "CONFIRMED") {
         if (!valid) throw conflict("CHECKOUT_CART_UNAVAILABLE");
         const confirmed = attempt;
@@ -64,6 +71,11 @@ export class PaymentInitiationService {
             async ({ trx, hold, assertFresh }) => {
               await assertNativeCheckoutSnapshot(this.container, snapshot);
               await assertFresh();
+              const restriction = await this.compliance.evaluate(trx, this.customerId,
+                context.merchant_store_id, snapshot.items.map(item => item.variant_id));
+              if (!snapshot.restricted_commerce || JSON.stringify(restriction) !== JSON.stringify(snapshot.restricted_commerce)) {
+                throw conflict("CHECKOUT_RECONFIRM");
+              }
               const now = await databaseTime(trx);
               const deadline = new Date(now.getTime() + paymentDeadlineMinutes(process.env) * 60000);
               const [pending] = await trx<Attempt>("checkout_attempt")
@@ -78,8 +90,9 @@ export class PaymentInitiationService {
             }, snapshot,
           );
         });
-        attempt = await this.db<Attempt>("checkout_attempt").where({ id: confirmed.id }).first();
-        if (!attempt) throw missing();
+        const refreshed = await this.db<Attempt>("checkout_attempt").where({ id: confirmed.id }).first();
+        if (!refreshed) throw missing();
+        attempt = refreshed;
       }
 
       // Re-enter after a lost response using committed state, not a replay of
@@ -89,6 +102,11 @@ export class PaymentInitiationService {
       const row = await this.db<{ id: string }>("provider_operation").where({ checkout_attempt_id: attempt.id }).first();
       if (!row) throw conflict("CHECKOUT_REFRESH_REQUIRED");
       try {
+        // Recovery may replay the SAME external operation, never a new licence
+        // decision. Revalidate before any further checkout-creation side effect.
+        const restriction = await this.db.transaction(trx => this.compliance.evaluate(trx,
+          this.customerId, context.merchant_store_id, snapshot.items.map(item => item.variant_id)));
+        if (!snapshot.restricted_commerce || JSON.stringify(restriction) !== JSON.stringify(snapshot.restricted_commerce)) throw conflict("CHECKOUT_RECONFIRM");
         await assertNativeCheckoutSnapshot(this.container, snapshot);
         const operation = await this.operations.row(row.id);
         if (operation.account_fingerprint !== fingerprint(configuration.secretKey)) {
@@ -115,6 +133,7 @@ export class PaymentInitiationService {
       if (!operation.checkout || operation.state !== "created") return this.result(attempt, "uncertain");
       hostedRedirect(operation.checkout.redirectUrl);
       return this.result(attempt, "ready", operation.checkout.redirectUrl);
+      });
     });
   }
 }

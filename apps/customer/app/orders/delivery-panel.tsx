@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDispatchClient } from "@gospaza/api-client";
 import { useDriverResource } from "@gospaza/ui/driver-resource";
+import { restrictedReturnCopy } from "@gospaza/ui/dispatch";
 const denied = () => window.location.replace("/login");
 function VisibleDelivery({ id }: { id: string }) {
   const client = useMemo(() => createDispatchClient(process.env.NEXT_PUBLIC_API_URL!, fetch, process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""), []);
@@ -14,6 +15,7 @@ function VisibleDelivery({ id }: { id: string }) {
   const { refresh } = resource;
   const [now, setNow] = useState(() => Date.now());
   const phase = resource.data?.tracking.state;
+  const returned = restrictedReturnCopy(phase);
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
@@ -52,6 +54,11 @@ function VisibleDelivery({ id }: { id: string }) {
       {!code.can_regenerate && <p>A new code is not currently available. Refresh after the cooldown, or wait for operational review if the limit is reached.</p>}
     </>}
     {phase === "ATTENTION_REQUIRED" && <p>Delivery needs attention. This does not confirm cancellation or a refund.</p>}
+    {returned && <>
+      <p>{returned.body}</p>
+      <p>Financial review is pending. A physical return does not confirm a refund, store credit or total adjustment.</p>
+      <p>Courier location and handoff code are no longer available.</p>
+    </>}
     {phase === "DELIVERED" && <p>Delivery completed. Location and handoff code are no longer available.</p>}
   </section>;
 }

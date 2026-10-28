@@ -13,7 +13,9 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: "/merchant/restricted-commerce/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/driver\/deliveries(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/merchant\/deliveries\/[^/]+\/return$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/store\/gospaza\/orders\/[^/]+\/handoff-code(?:\/regenerate)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/admin\/orders\/[^/]+\/(?:fulfillments|cancel)(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
     { matcher: /^\/admin\/fulfillments(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },

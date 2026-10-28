@@ -57,3 +57,5 @@ export { createDriverAuthClient } from "./auth";
 export type { DriverAuthClient } from "./auth";
 export * from "./drivers";
 export * from "./dispatch";
+export * from "./restricted-commerce";
+export * from "./recipient";

@@ -29,3 +29,5 @@ export * from "./drivers";
 export * from "./dispatch";
 export * from "./pickup";
 export * from "./handoff";
+export * from "./restricted-commerce";
+export * from "./recipient";

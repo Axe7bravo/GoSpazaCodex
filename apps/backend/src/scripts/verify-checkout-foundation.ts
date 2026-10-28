@@ -38,7 +38,7 @@ export interface CheckoutVerificationCustomer {
 export interface CheckoutVerificationFixture {
   prefix: string;
   fixture: CartVerificationFixture;
-  customer(suffix: string, variantId?: string, quantity?: number): Promise<CheckoutVerificationCustomer>;
+  customer(suffix: string, variantId?: string, quantity?: number, selectSlot?: () => Promise<string>): Promise<CheckoutVerificationCustomer>;
   http(cookie: string, method: string, route: string, body?: unknown): Promise<{ status: number; body: unknown }>;
   expect(result: { status: number; body: unknown }, status?: number): unknown;
 }
@@ -104,7 +104,7 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
         booking_cutoff_at: new Date(now.getTime() + 82800000).toISOString(), capacity: 30, enabled: true,
       }, prefix, reason);
     }
-    async function customer(suffix: string, variantId = first.variantId, quantity = 1) {
+    async function customer(suffix: string, variantId = first.variantId, quantity = 1, selectSlot?: () => Promise<string>) {
       const person = await fixture.createCustomer(prefix + suffix);
       const cart = z.object({ cart_id: z.string() }).parse(expect(await http(person.cookie, "POST",
         "/store/gospaza/cart/items", { variant_id: variantId, quantity, location })));
@@ -119,6 +119,7 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
       for (const address of owned.addresses) addresses.push({ id: address.id, cookie: person.cookie });
       assert.equal(owned.addresses.length, 1);
       const address = owned.addresses[0]; assert.ok(address);
+      const selectedSlotId = selectSlot ? await selectSlot() : undefined;
       const available = z.object({
         revision: z.number(), options: z.array(z.object({ id: z.string(), mode: z.string(), revision: z.number() })),
         slots: z.array(z.object({ id: z.string() })),
@@ -126,7 +127,8 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
         cart_id: cart.cart_id, location: { address_id: address.id },
       })));
       const option = available.options.find((item) => item.mode === "SCHEDULED");
-      const slot = available.slots[0]; assert.ok(option && slot);
+      const slot = selectedSlotId ? available.slots.find(item => item.id === selectedSlotId) : available.slots[0];
+      assert.ok(option && slot, "Requested fixture slot must be present in authoritative delivery availability");
       const held = z.object({
         revision: z.number(), selection: z.object({ id: z.string(), expires_at: z.string() }),
       }).parse(expect(await http(person.cookie, "PUT", "/store/gospaza/cart/delivery-selection", {

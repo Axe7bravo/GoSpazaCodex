@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { createDispatchClient } from "@gospaza/api-client";
 import { useDriverResource } from "@gospaza/ui/driver-resource";
+import RecipientPanel from "./recipient-panel";
 const client = createDispatchClient(process.env.NEXT_PUBLIC_API_URL!);
 const denied = () => window.location.replace("/login");
 const load = async () => {
@@ -90,5 +91,7 @@ export default function DeliveryPanel({ changed }: { changed: () => Promise<unkn
           submit={candidate => act(() => client.verifyHandoff(handoff.delivery_id, handoff.revision, candidate))} />}
     </>}
     {phase === "DELIVERED" && <p role="status">Delivered</p>}
+    {handoff && (handoff.restricted_content_present || handoff.compliance_required || handoff.state.startsWith("RETURN")) && phase !== "DELIVERED" &&
+      <RecipientPanel key={handoff.delivery_id + ":" + handoff.revision} id={handoff.delivery_id} phase={phase ?? "UNAVAILABLE"} changed={refresh} />}
   </section>;
 }

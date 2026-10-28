@@ -11,6 +11,7 @@ import { PickupService, type PickupScope } from "./pickup-service";
 import { HandoffService } from "./handoff-service";
 import { DriverService } from "../modules/marketplace/driver-service";
 import { RedisDispatchLocations } from "./dispatch-location";
+import { returnFor } from "./recipient-service";
 export const trackingInput = dispatchLocationInput.extend({ purpose: z.literal("DELIVERY") }).strict();
 export class DeliveryTracking {
   private readonly pickup: PickupService;
@@ -19,7 +20,7 @@ export class DeliveryTracking {
   constructor(private readonly container: MedusaContainer) { this.pickup = new PickupService(container); this.db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION); }
   private async active(s: PickupScope) {
     return s.d.status === "ASSIGNED" && !!s.d.picked_up_at && s.c.status === "ASSIGNED" && s.e.eligible && s.e.affiliation_id === s.c.affiliation_id
-      && !await s.trx("delivery_completion").where({ delivery_id: s.d.id }).first();
+      && !await s.trx("delivery_completion").where({ delivery_id: s.d.id }).first() && !await returnFor(s);
   }
   async begin(identity: string, id: string, body: unknown) {
     const input = dispatchParse(handoffRevision, body);

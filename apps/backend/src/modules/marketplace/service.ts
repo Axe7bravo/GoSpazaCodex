@@ -1,3 +1,11 @@
+import RecipientCompliance from "./models/recipient-compliance";
+import RestrictedReturn from "./models/restricted-return";
+import RestrictedDeliveryDocument from "./models/restricted-delivery-document";
+import RestrictedRegistration from "./models/restricted-registration";
+import RestrictedEvidence from "./models/restricted-evidence";
+import RestrictionReview from "./models/restriction-review";
+import RestrictedEvent from "./models/restricted-event";
+import PurchaserEligibility from "./models/purchaser-eligibility";
 import StoreDispatchConfiguration from "./models/dispatch-configuration";
 import PickupOperation from "./models/pickup-operation";
 import HandoffGeneration from "./models/handoff-generation";
@@ -70,7 +78,7 @@ const APPS = "merchant_application";
 const DOCS = "merchant_application_document";
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Application or document not found.");
 const conflict = (message: string) => new MedusaError(MedusaError.Types.NOT_ALLOWED, message);
-export default class MarketplaceService extends MedusaService({ HandoffGeneration, DeliveryCompletion, PickupOperation, StoreDispatchConfiguration, DriverAvailability, DeliveryOperation, DispatchCommitment, DispatchEvent, DriverProfile, DriverAffiliation, DriverEvent, OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
+export default class MarketplaceService extends MedusaService({ RecipientCompliance, RestrictedReturn, RestrictedDeliveryDocument, RestrictedRegistration, RestrictedEvidence, RestrictionReview, RestrictedEvent, PurchaserEligibility, HandoffGeneration, DeliveryCompletion, PickupOperation, StoreDispatchConfiguration, DriverAvailability, DeliveryOperation, DispatchCommitment, DispatchEvent, DriverProfile, DriverAffiliation, DriverEvent, OrderShortagePreference, ShortageResolution, ShortageEvent, PickSession, PickLine, PickEvent, OrderDecisionEvent, OrderOperation, CheckoutCompletion, YocoInbox, TechnicalCompensation, ProviderOperation, ProviderSession, CheckoutAttempt, StoreDeliveryPolicy, DeliveryOptionConfiguration, DeliverySlot, DeliveryReservation, SchedulingEvent, CartMarketplaceContext, ServiceZoneEvent, ServiceZone, StoreServiceZone, AddressLocation, ProductMarketplaceProfile, CatalogueMedia, Application, Document, Merchant, MerchantStore, MerchantMember, ReviewEvent, MerchantInvitation }) {
   private db: Knex;
   constructor(container: { __pg_connection__: Knex }) { super(container); this.db = container.__pg_connection__; }
   // All SQL is confined to this module's tables. Row locks serialize submit/edit/file mutations.

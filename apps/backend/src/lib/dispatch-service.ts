@@ -206,7 +206,7 @@ export class DispatchService {
       return this.change(trx, d, { status: "SEARCHING", generation: 1, mode: r.config.mode, configuration_revision: r.config.revision,
         path, started_at: now, deadline: new Date(now.getTime() + this.policy.searchMs),
         merchant_deadline: r.config.mode === "HYBRID" ? new Date(now.getTime() + Math.min(this.policy.merchantPhaseMs, this.policy.searchMs)) : null,
-        offer_ms: this.policy.offerMs, dispatch_not_before: r.notBefore, restricted_content_present: r.restricted }, "SEARCH_STARTED");
+        offer_ms: this.policy.offerMs, dispatch_not_before: r.notBefore, restricted_content_present: d.restricted_content_present || r.restricted }, "SEARCH_STARTED");
     });
   }
   async preflight(id: string) {
@@ -275,7 +275,7 @@ export class DispatchService {
         generation: d.generation, path: d.path, status: "OFFERED", availability_generation: a.generation,
         affiliation_id: e.affiliation_id, affiliation_revision: e.affiliation_revision, profile_revision: e.profile_revision, expires_at: expires }).returning("*");
       if (!c) return dispatchMissing();
-      await this.change(trx, d, { status: "OFFERED", restricted_content_present: r?.restricted ?? d.restricted_content_present }, "OFFER_CREATED", system, { commitment_id: c.id, driver_profile_id: profile });
+      await this.change(trx, d, { status: "OFFERED", restricted_content_present: d.restricted_content_present || !!r?.restricted }, "OFFER_CREATED", system, { commitment_id: c.id, driver_profile_id: profile });
       return c;
     });
   }
@@ -322,7 +322,7 @@ export class DispatchService {
       }
       const [assigned] = await trx<CommitmentRow>("dispatch_commitment").where({ id }).update({ status: "ASSIGNED", revision: c.revision + 1,
         assigned_at: committedAt, decided_at: committedAt, updated_at: committedAt }).returning("*");
-      await this.change(trx, d, { status: "ASSIGNED", restricted_content_present: r?.restricted ?? d.restricted_content_present }, "ASSIGNED", { type: "driver", id: p.id }, { commitment_id: id });
+      await this.change(trx, d, { status: "ASSIGNED", restricted_content_present: d.restricted_content_present || !!r?.restricted }, "ASSIGNED", { type: "driver", id: p.id }, { commitment_id: id });
       return { result: assigned };
     });
     if ("conflict" in outcome || !outcome.result) return dispatchConflict();

@@ -16,7 +16,7 @@ const state = z.object({ pickup: z.object({ delivery_id: z.string(), revision: z
 
 export interface PickupVerificationFixture {
   f: DispatchVerificationFixture;
-  assigned: (label: string, quantity?: number, physical?: number, merchant?: boolean) => Promise<{
+  assigned: (label: string, quantity?: number, physical?: number, merchant?: boolean, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4]) => Promise<{
     order: Awaited<ReturnType<DispatchVerificationFixture["completed"]>>;
     who: Awaited<ReturnType<DispatchVerificationFixture["driver"]>>;
     delivery: Awaited<ReturnType<DispatchVerificationFixture["dispatch"]["ensure"]>>;
@@ -33,8 +33,8 @@ export default async function verifyPickup(args: ExecArgs, extension?: (fixture:
     const query = container.resolve<{ graph(input: { entity: string; fields: string[]; filters: Record<string, unknown> }): Promise<{ data: unknown[] }> }>(ContainerRegistrationKeys.QUERY);
     const service = new PickupService(container);
     const drivers = new DriverService(container), orderIds: string[] = [], failures: unknown[] = [];
-    async function assigned(label: string, quantity = 1, physical = quantity, merchant = false) {
-      const order = await f.completed("m16-" + label, physical === 0, quantity, physical); orderIds.push(order.orderId);
+    async function assigned(label: string, quantity = 1, physical = quantity, merchant = false, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4]) {
+      const order = await f.completed("m16-" + label, physical === 0, quantity, physical, purchaser); orderIds.push(order.orderId);
       const who = await f.driver("m16-" + label, merchant ? first.store.id : undefined); await f.online(who);
       const delivery = await f.dispatch.ensure(order.orderId); await f.dispatch.start(delivery.id);
       const offer = await f.dispatch.offer(delivery.id, who.id);
@@ -64,7 +64,7 @@ export default async function verifyPickup(args: ExecArgs, extension?: (fixture:
       await Promise.all([service.prepare(a.delivery.id), service.prepare(a.delivery.id)]);
       let current = await read(a.who.cookie);
       assert.equal(current.state, "PICKUP_READY"); assert.equal(current.picked_up_at, null);
-      assert.equal(current.restricted_content_present, true);
+      assert.equal(current.restricted_content_present, false, "pickup retains the immutable grocery checkout evidence");
       const prepared = await db<PickupOperation>("pickup_operation").where({ delivery_id: a.delivery.id, action: "PREPARE" }).first();
       assert.ok(prepared); assert.equal(prepared.state, "SUCCEEDED");
       assert.equal(prepared.input.financial_review_required, true);

@@ -13,19 +13,20 @@ import { PickingService } from "../lib/picking-service";
 import { OrderOperationsService } from "../lib/order-operations-service";
 import { SchedulingService } from "../lib/scheduling-service";
 import { DispatchService } from "../lib/dispatch-service";
+import { dispatchReadiness } from "../lib/dispatch-readiness";
 import { DispatchOrchestrator } from "../lib/dispatch-orchestrator";
 import { dispatchSample } from "../lib/dispatch-location";
 
-import { dispatchPolicy } from "../modules/marketplace/dispatch-policy";
+import { dispatchPolicy, dispatchTimeReady } from "../modules/marketplace/dispatch-policy";
 import { databaseTime } from "../modules/marketplace/delivery-reservation-repository";
-import type { CommitmentRow } from "../modules/marketplace/dispatch-rows";
+import type { CommitmentRow, DeliveryRow } from "../modules/marketplace/dispatch-rows";
 
 
 const availability = z.object({ revision: z.number(), generation: z.string().nullable(), intent: z.string(), effective: z.string(), location_fresh: z.boolean() });
 const decision = { expected_revision: 1 };
 export interface DispatchVerificationFixture {
   orders: OrderOperationsVerificationFixture;
-  completed: (label: string, omitted?: boolean, quantity?: number, picked?: number) => ReturnType<OrderOperationsVerificationFixture["complete"]>;
+  completed: (label: string, omitted?: boolean, quantity?: number, picked?: number, purchaser?: Parameters<OrderOperationsVerificationFixture["complete"]>[3]) => ReturnType<OrderOperationsVerificationFixture["complete"]>;
   driver: (label: string, store?: string) => Promise<{ identity: string; cookie: string; id: string }>;
   online: (who: { cookie: string }) => Promise<string>;
   dispatch: DispatchService;
@@ -47,7 +48,54 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
     const payments = container.resolve<IPaymentModuleService>(Modules.PAYMENT);
     const drivers = new DriverService(container), picking = new PickingService(container);
     const operations = new OrderOperationsService(container), scheduling = new SchedulingService(container);
-    const dispatch = new DispatchService(container);
+    const fixtureLabels = new Map<string, string>();
+    class DiagnosticDispatch extends DispatchService {
+      override async start(id: string) {
+        try { return await super.start(id); }
+        catch (error) {
+          if (!(error instanceof Error) || !("code" in error) || error.code !== "DISPATCH_NOT_READY") throw error;
+          // Diagnostic only: observe the authoritative policy again, never retry
+          // start. Always roll back because restricted readiness can ensure a document.
+          let detail = "diagnostic_unavailable";
+          const rollback = new Error("Verifier diagnostic rollback");
+          try {
+            await db.transaction(async trx => {
+              const observed = await trx<DeliveryRow>("delivery_operation").where({ id }).first();
+              if (!observed) { detail = "delivery_missing"; throw rollback; }
+              await trx("merchant").where({ id: observed.merchant_id }).forUpdate().first();
+              const d = await trx<DeliveryRow>("delivery_operation").where({ id }).forUpdate().first();
+              if (!d) { detail = "delivery_missing"; throw rollback; }
+              const fixture = fixtureLabels.get(d.medusa_order_id) ?? "prerequisite";
+              const prefix = `fixture=${fixture}; delivery_restricted=${d.restricted_content_present}; `;
+              try {
+                const r = await dispatchReadiness(container, trx, d, this.policy);
+                const now = await databaseTime(trx);
+                const reason = !r.config ? "CONFIGURATION_MISSING" : r.config.mode === "DISABLED" ? "CONFIGURATION_DISABLED"
+                  : d.generation !== 0 && (r.config.revision !== d.configuration_revision || r.config.mode !== d.mode) ? "CONFIGURATION_CHANGED"
+                  : !dispatchTimeReady(r.notBefore, now) ? "DISPATCH_NOT_BEFORE"
+                  : r.zone.id !== d.service_zone_id ? "SERVICE_ZONE_CHANGED"
+                  : ["ATTENTION_REQUIRED", "ASSIGNED"].includes(d.status) ? "DELIVERY_STATE"
+                  : "READY_ON_DIAGNOSTIC_READ";
+                const slot = await trx<{ start_at: Date }>("delivery_slot").where({ id: r.hold.delivery_slot_id }).first();
+                detail = prefix + `snapshot_restricted=${r.restricted}; reason=${reason}; ` + JSON.stringify({
+                  reference_time: now.toISOString(), slot_start: slot ? new Date(slot.start_at).toISOString() : null,
+                  dispatch_not_before: r.notBefore?.toISOString() ?? null,
+                  milliseconds_until_dispatch: r.notBefore ? r.notBefore.getTime() - now.getTime() : 0,
+                  lead_ms: this.policy.leadMs, timezone: "UTC (+00:00)",
+                });
+              } catch (underlying) {
+                const code = underlying instanceof Error && "code" in underlying ? underlying.code : undefined;
+                // Never print messages, snapshots, documents, coordinates or identity evidence.
+                detail = prefix + "readiness_code=" + (typeof code === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(code) ? code : "UNCLASSIFIED_READINESS_FAILURE");
+              }
+              throw rollback;
+            });
+          } catch (diagnostic) { if (diagnostic !== rollback) detail = "diagnostic_unavailable"; }
+          throw new Error("Dispatch verifier readiness after failed start: " + detail, { cause: error });
+        }
+      }
+    }
+    const dispatch = new DiagnosticDispatch(container);
     const user = z.string().parse((await auth.retrieveAuthIdentity(f.platform.identity)).app_metadata?.user_id);
     const identities: string[] = [], profiles: string[] = [], cookies: string[] = [], orderIds: string[] = [];
     const prefix = "m15b-" + randomUUID(), failures: unknown[] = [];
@@ -85,8 +133,28 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
       await http(who.cookie, "PUT", "/driver/location", { ...location, generation: a.generation, sequence: 1 });
       return a.generation;
     }
-    async function completed(label: string, omitted = false, quantity = 1, picked?: number) {
-      const order = await f.complete(prefix + label, undefined, quantity); orderIds.push(order.orderId);
+    let dispatchSlot: Awaited<ReturnType<SchedulingService["saveSlot"]>> | undefined;
+    async function selectDispatchSlot() {
+      // Called immediately before availability, not at the start of the nested suite.
+      // Retire only our own fixture slot through M9; never move referenced windows.
+      const now = await db.transaction(databaseTime);
+      assert.ok(dispatch.policy.leadMs >= 15 * 60000, "Dispatch fixtures require at least the standard 15-minute fixture lead allowance");
+      if (!dispatchSlot || Date.parse(dispatchSlot.booking_cutoff_at) <= now.getTime() + 5 * 60000) {
+        if (dispatchSlot) await scheduling.saveSlot(first.store.id, {
+          start_at: dispatchSlot.start_at, end_at: dispatchSlot.end_at, booking_cutoff_at: dispatchSlot.booking_cutoff_at,
+          capacity: dispatchSlot.capacity, enabled: false,
+        }, user, "Retire isolated dispatch fixture slot", dispatchSlot.id);
+        dispatchSlot = await scheduling.saveSlot(first.store.id, {
+          start_at: new Date(now.getTime() + 15 * 60000).toISOString(),
+          end_at: new Date(now.getTime() + 45 * 60000).toISOString(),
+          booking_cutoff_at: new Date(now.getTime() + 10 * 60000).toISOString(), capacity: 30, enabled: true,
+        }, user, "Fresh dispatch-eligible fixture slot");
+      }
+      return dispatchSlot.id;
+    }
+    async function completed(label: string, omitted = false, quantity = 1, picked?: number, purchaser?: Parameters<OrderOperationsVerificationFixture["complete"]>[3]) {
+      const order = await f.complete(prefix + label, undefined, quantity, purchaser, selectDispatchSlot); orderIds.push(order.orderId);
+      fixtureLabels.set(order.orderId, label);
       await operations.ensure(order.orderId);
       await operations.decide(f.ownerA.identity, order.orderId, "accept", { expected_revision: 0, confirmed: true });
       const shortage = omitted || picked !== undefined && picked < quantity;
@@ -133,17 +201,13 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
         assert.equal(option.sync_state, "READY");
         assert.equal(option.synced_revision, option.revision);
       }
-      const now = await db.transaction(databaseTime);
-      await scheduling.saveSlot(first.store.id, { start_at: new Date(now.getTime() + 15 * 60000).toISOString(),
-        end_at: new Date(now.getTime() + 45 * 60000).toISOString(), booking_cutoff_at: new Date(now.getTime() + 10 * 60000).toISOString(),
-        capacity: 30, enabled: true }, user, "M15 fixture");
       // Only these synthetic inventory resources; baseline begins after fixture creation.
       const sampleOrder = await native.retrieveOrder(f.a.orderId, { relations: ["items"] });
       for (const r of await inventory.listReservationItems({ line_item_id: (sampleOrder.items ?? []).map(i => i.id) }, { take: null })) {
         await inventory.updateInventoryLevels({ inventory_item_id: r.inventory_item_id, location_id: r.location_id, stocked_quantity: 100 });
       }
       const one = await completed("one", true), two = await completed("two"), three = await completed("three"), four = await completed("four");
-      // Restricted presence is server-derived; it does not manufacture M17 compliance.
+      // M17: later catalogue edits cannot reinterpret an already-paid snapshot.
       const productId = sampleOrder.items?.[0]?.product_id; assert.ok(productId);
       await db("product_marketplace_profile").where({ medusa_product_id: productId, merchant_id: first.merchantId }).update({ requires_age_verification: true });
       const d1s = await Promise.all([dispatch.ensure(one.orderId), dispatch.ensure(one.orderId)]);
@@ -153,7 +217,8 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
       const shortageRows = await db<{ financial_review_required: boolean }>("shortage_resolution").whereIn("order_operation_id",
         db("order_operation").select("id").where({ medusa_order_id: one.orderId }));
       assert.ok(shortageRows.length && shortageRows.every(r => r.financial_review_required));
-      assert.equal(d1.restricted_content_present, true);
+      assert.equal(d1.restricted_content_present, false, "paid grocery classification is frozen independently of later merchant flags");
+      await db("product_marketplace_profile").where({ medusa_product_id: productId, merchant_id: first.merchantId }).update({ requires_age_verification: false });
       // The earlier M10 fixture uses tomorrow's immutable scheduled slot.
       orderIds.push(f.a.orderId);
       await operations.decide(f.ownerA.identity, f.a.orderId, "accept", { expected_revision: 0, confirmed: true });

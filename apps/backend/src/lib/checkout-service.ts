@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { RestrictedCommerce } from "./restricted-commerce";
+import type { PurchaserEligibilityProvider } from "../modules/marketplace/restricted-policy";
 import type { MedusaContainer } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
@@ -32,9 +34,11 @@ function confirmation(row: Attempt): CheckoutConfirmation {
 export class CheckoutService {
   private db: Knex;
   private carts: CartFoundationService;
-  constructor(private container: MedusaContainer, private customerId: string) {
+  private compliance: RestrictedCommerce;
+  constructor(private container: MedusaContainer, private customerId: string, purchaser?: PurchaserEligibilityProvider) {
     this.db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
     this.carts = new CartFoundationService(container, customerId);
+    this.compliance = new RestrictedCommerce(container, purchaser);
   }
 
   async read(value: unknown, attemptId?: string) {
@@ -84,11 +88,14 @@ export class CheckoutService {
         if (confirm && "checkout_revision" in input && input.checkout_revision === existing.checkout_revision
           && input.address_id === snapshot.address_id
           && input.expected_reservation_revision === snapshot.reservation_revision) {
+          const restricted = await commerceLock(this.container, context.merchant_id, () => this.db.transaction(trx =>
+            this.compliance.evaluate(trx, this.customerId, context.merchant_store_id, snapshot.items.map(item => item.variant_id))));
+          if (JSON.stringify(restricted) !== JSON.stringify(snapshot.restricted_commerce)) throw conflict("CHECKOUT_RECONFIRM");
           return { attempt: confirmation(existing), quote: confirmation(existing).quote, reconfirmation_required: false };
         }
         throw conflict("CHECKOUT_FROZEN");
       }
-      return commerceLock(this.container, "address:" + this.customerId, async () => {
+      return commerceLock(this.container, context.merchant_id, () => commerceLock(this.container, "address:" + this.customerId, async () => {
         const owned = await ownedCheckoutAddress(this.container, this.customerId, input.address_id);
         return new DeliveryReservationService(this.container, this.customerId).withCheckoutReservation(
           context, input.address_id, input.expected_reservation_revision,
@@ -97,14 +104,17 @@ export class CheckoutService {
             if (native.customer_id !== this.customerId) throw missing();
             const method = native.shipping_methods?.[0];
             if (!method) throw conflict("CHECKOUT_NATIVE_STATE");
+            const items = checkoutSnapshot.shape.items.parse(nativeCheckoutItems(native));
             const snapshot = checkoutSnapshot.parse({
+              restricted_commerce: await this.compliance.evaluate(trx, this.customerId,
+                context.merchant_store_id, items.map(item => item.variant_id)),
               customer_id: this.customerId, cart_id: cart.id, cart_context_id: context.id,
               merchant_id: context.merchant_id, merchant_store_id: context.merchant_store_id,
               address_id: owned.id, address: owned.address, reservation_id: hold.id,
               reservation_revision: hold.selection_revision, configuration_revision: hold.configuration_revision,
               delivery_option_id: hold.delivery_option_id, shipping_option_id: shippingOptionId,
               shipping_method_id: method.id, currency_code: native.currency_code,
-              totals: nativeCheckoutTotals(native), items: nativeCheckoutItems(native),
+              totals: nativeCheckoutTotals(native), items,
             });
             await assertFresh();
             const revision = checkoutRevision(snapshot);
@@ -124,10 +134,13 @@ export class CheckoutService {
               created_at: now, updated_at: now,
             }).returning("*");
             if (!attempt) throw conflict("CHECKOUT_REFRESH_REQUIRED");
+            await this.compliance.event(trx, { id: context.merchant_store_id, merchant_id: context.merchant_id },
+              this.customerId, attempt.id, "CHECKOUT_ALLOWED", { restricted: snapshot.restricted_commerce?.restricted_content_present ?? false,
+                classification_revisions: snapshot.restricted_commerce?.classifications.map(c => c.revision_id) });
             return { quote: result, attempt: confirmation(attempt), reconfirmation_required: false };
           },
         );
-      });
+      }));
     });
   }
 }

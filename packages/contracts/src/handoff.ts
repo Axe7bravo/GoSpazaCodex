@@ -1,8 +1,9 @@
 export interface HandoffDTO {
   delivery_id: string; revision: number;
-  state: "IN_TRANSIT" | "ARRIVED" | "DELIVERED" | "ATTENTION_REQUIRED" | "UNAVAILABLE";
+  state: "RETURN_REQUIRED" | "RETURNING_TO_STORE" | "RETURNED_TO_STORE" | "IN_TRANSIT" | "ARRIVED" | "DELIVERED" | "ATTENTION_REQUIRED" | "UNAVAILABLE";
   arrived_at: string | null; delivered_at: string | null;
   compliance_required: boolean;
+  restricted_content_present?: boolean;
 }
 export interface HandoffCodeDTO {
   state: "AVAILABLE" | "EXPIRED" | "UNAVAILABLE";

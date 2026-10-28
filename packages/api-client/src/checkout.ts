@@ -1,11 +1,20 @@
 import type { CheckoutAttemptInput, CheckoutConfirmInput, CheckoutPreparation, CheckoutPrepareInput,
   CustomerCheckoutStatus, PaymentInitiationResult } from "@gospaza/contracts";
 
+const restrictedCheckoutCopy: Record<string,string> = {
+  PURCHASER_VERIFICATION_UNAVAILABLE: "Alcohol purchaser verification is currently unavailable. Restricted checkout cannot proceed.",
+  PURCHASER_VERIFICATION_NOT_VERIFIED: "Purchaser verification is required before alcohol checkout.",
+  PURCHASER_VERIFICATION_EXPIRED: "Purchaser verification has expired. Restricted checkout cannot proceed.",
+  CLASSIFICATION_REVIEW_REQUIRED: "An item requires platform review before checkout can proceed.",
+  RESTRICTED_STORE_UNAVAILABLE: "This store is not currently eligible to supply the restricted items in your cart.",
+  RESTRICTED_CATEGORY_UNAVAILABLE: "This store cannot supply this category of restricted item.",
+  RESTRICTED_TRADING_CLOSED: "Restricted items are unavailable at the current permitted supply time. Review your cart and delivery selection.",
+};
 export class CheckoutError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
-    super(status === 401 ? "Please sign in again to view checkout."
+    super(restrictedCheckoutCopy[code] ?? (status === 401 ? "Please sign in again to view checkout."
       : status === 400 || status === 404 ? "Check your delivery address and selection, then refresh checkout."
-      : "We could not confirm checkout. Refresh its status before making another payment attempt.");
+      : "We could not confirm checkout. Refresh its status before making another payment attempt."));
     this.name = "CheckoutError";
   }
 }
@@ -36,7 +45,7 @@ export function createCheckoutClient(baseUrl: string, publishableKey: string, fe
     try { body = await response.json(); } catch { throw new CheckoutError(response.status, "CHECKOUT_REFRESH_REQUIRED"); }
     if (!object(body)) throw new CheckoutError(response.status, "CHECKOUT_REFRESH_REQUIRED");
     if (!response.ok && !expectedFailure?.(body, response.status)) {
-      const safe = ["CHECKOUT_RECONFIRM", "CHECKOUT_FROZEN", "CHECKOUT_REFRESH_REQUIRED", "PAYMENT_RECOVERY_REQUIRED"];
+      const safe = ["CHECKOUT_RECONFIRM", "CHECKOUT_FROZEN", "CHECKOUT_REFRESH_REQUIRED", "PAYMENT_RECOVERY_REQUIRED", ...Object.keys(restrictedCheckoutCopy)];
       throw new CheckoutError(response.status, typeof body.code === "string" && safe.includes(body.code) ? body.code : "CHECKOUT_REFRESH_REQUIRED");
     }
     return body as T;

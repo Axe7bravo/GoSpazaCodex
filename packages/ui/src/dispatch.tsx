@@ -10,6 +10,14 @@ const labels = {
   ATTENTION_REQUIRED: "Delivery needs operational attention",
 };
 const unavailable = () => {};
+export function restrictedReturnCopy(phase: string | undefined) {
+  switch (phase) {
+    case "RETURN_REQUIRED": return { title: "Unable to complete restricted delivery", body: "The entire order must be returned to the store." };
+    case "RETURNING_TO_STORE": return { title: "Returning to store", body: "Your order is being returned to the store." };
+    case "RETURNED_TO_STORE": return { title: "Returned to store", body: "The store has acknowledged physical receipt of your order." };
+    default: return null;
+  }
+}
 export function OrderDispatch({ id, actor, baseUrl, publishableKey = "", details }: {
   id: string; actor: "merchant" | "customer"; baseUrl: string; publishableKey?: string; details?: ReactNode;
 }) {
@@ -32,8 +40,8 @@ export function OrderDispatch({ id, actor, baseUrl, publishableKey = "", details
     {!resource.data && !resource.error && <p role="status">Loading delivery status…</p>}
     {resource.error && <p role="alert">Delivery status is unavailable. Refresh to check again.</p>}
     {resource.data && <>
-      <p>{resource.data.delivery_phase === "DELIVERED" ? "Delivered" : resource.data.delivery_phase === "ARRIVED" ? "Driver arrived"
-        : resource.data.delivery_phase === "IN_TRANSIT" ? "In transit" : labels[resource.data.status]}</p>
+      <p>{restrictedReturnCopy(resource.data.delivery_phase)?.title ?? (resource.data.delivery_phase === "DELIVERED" ? "Delivered" : resource.data.delivery_phase === "ARRIVED" ? "Driver arrived"
+        : resource.data.delivery_phase === "IN_TRANSIT" ? "In transit" : labels[resource.data.status])}</p>
       {actor === "merchant" && resource.data.pickup_state && <p>{resource.data.pickup_state === "PICKUP_READY" ? "Ready for pickup"
         : resource.data.pickup_state === "PICKUP_PENDING" ? "Confirming pickup" : resource.data.pickup_state === "ATTENTION_REQUIRED"
           ? "Delivery needs operational attention" : "Pickup is not ready yet"}</p>}

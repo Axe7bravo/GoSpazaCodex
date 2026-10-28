@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "@medusajs/framework/zod";
 import { addressInput } from "./location-policy";
+import { restrictedSnapshot } from "./restricted-policy";
 
 export const checkoutId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -20,6 +21,8 @@ export const checkoutAbandonInput = checkoutReadInput.extend({
 export const checkoutAddress = addressInput.omit({ location: true });
 const cents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const checkoutSnapshot = z.object({
+  // Optional only to read historical pre-M17 receipts; new prepare/Pay require it.
+  restricted_commerce: restrictedSnapshot.optional(),
   customer_id: checkoutId,
   cart_id: checkoutId,
   cart_context_id: checkoutId,
@@ -42,7 +45,14 @@ export const checkoutSnapshot = z.object({
     id: checkoutId, variant_id: checkoutId, quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     unit_price_minor: cents, total_minor: cents,
   }).strict()).min(1),
-}).strict();
+}).strict().refine(s => {
+  const restriction = s.restricted_commerce;
+  return !restriction || (
+    s.items.every(i => restriction.classifications.some(c => c.variant_id === i.variant_id))
+    && restriction.classifications.every(c => s.items.some(i => i.variant_id === c.variant_id))
+    && new Set(restriction.classifications.map(c => c.variant_id)).size === restriction.classifications.length
+  );
+});
 export type CheckoutSnapshot = z.infer<typeof checkoutSnapshot>;
 
 // Schema projection fixes property order and rejects unsupported/missing values.

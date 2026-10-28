@@ -16,7 +16,7 @@ export interface DeliveryRow {
 }
 export interface CommitmentRow {
   id: string; delivery_id: string; driver_profile_id: string; generation: number; path: DispatchPath;
-  status: "OFFERED" | "ASSIGNED" | "DECLINED" | "EXPIRED" | "CANCELLED" | "COMPLETED"; revision: number;
+  status: "OFFERED" | "ASSIGNED" | "DECLINED" | "EXPIRED" | "CANCELLED" | "COMPLETED" | "RETURNED"; revision: number;
   availability_generation: string; affiliation_id: string; profile_revision: number; affiliation_revision: number;
   updated_at?: Date; expires_at: Date; assigned_at: Date | null; decided_at: Date | null; reason: string | null;
 }

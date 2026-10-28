@@ -9,12 +9,12 @@ import type { Geometry } from "../modules/marketplace/location-policy";
 import { dispatchConflict, dispatchNotBefore, dispatchParse } from "../modules/marketplace/dispatch-policy";
 import type { DispatchPolicy } from "../modules/marketplace/dispatch-policy";
 import type { DispatchConfigRow } from "../modules/marketplace/dispatch-rows";
+import { RestrictedDeliveryDocument } from "./restricted-delivery-document";
 
 interface Reservation { id: string; store_service_zone_id: string; delivery_option_id: string; delivery_slot_id: string; latitude: number | string | null; longitude: number | string | null }
 interface Mapping { id: string; service_zone_id: string; medusa_service_zone_id: string | null }
 interface Zone { id: string; geometry: Geometry }
 interface Option { mode: "ASAP" | "SCHEDULED"; medusa_shipping_option_id: string | null }
-interface Profile { medusa_product_id: string; merchant_id: string; requires_age_verification: boolean }
 
 // Internal owner composition. Caller holds the target merchant lock before this
 // method; PickingService owns physical accounting and M10/native linkage.
@@ -50,16 +50,12 @@ export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Tr
     filters: { id: option.medusa_shipping_option_id } });
   const shippingRows = z.array(z.object({ id: z.string(), service_zone_id: z.string(), service_zone: z.object({ fulfillment_set: z.object({ type: z.literal("shipping") }) }) })).safeParse(shipping.data);
   if (!shippingRows.success || shippingRows.data.length !== 1 || shippingRows.data[0]?.service_zone_id !== mapping.medusa_service_zone_id) return dispatchConflict("DISPATCH_SHIPPING");
-  const variants = [...new Set(state.handoff.snapshot.items.map(item => item.variant_id))];
-  const native = await query.graph({ entity: "product_variant", fields: ["id", "product.id"], filters: { id: variants } });
-  const products = z.array(z.object({ id: z.string(), product: z.object({ id: z.string() }) })).parse(native.data);
-  if (products.length !== variants.length || variants.some(id => !products.some(p => p.id === id))) return dispatchConflict("DISPATCH_PRODUCT_EVIDENCE");
-  const productIds = [...new Set(products.map(p => p.product.id))];
-  const profiles = await trx<Profile>("product_marketplace_profile").whereIn("medusa_product_id", productIds)
-    .where({ merchant_id: scope.merchant_id }).whereNull("deleted_at").orderBy("medusa_product_id").forShare();
-  if (profiles.length !== productIds.length) return dispatchConflict("DISPATCH_PRODUCT_EVIDENCE");
+  const restriction = state.handoff.snapshot.restricted_commerce;
+  // Never reinterpret paid goods using today's merchant-editable catalogue.
+  if (!restriction) return dispatchConflict("DISPATCH_PRODUCT_EVIDENCE");
+  if (restriction.restricted_content_present) await new RestrictedDeliveryDocument(container).ensure(trx,state.operation.id,state.handoff,state.physical);
   const config = await trx<DispatchConfigRow>("store_dispatch_configuration").where({ merchant_store_id: scope.merchant_store_id }).forShare().first();
   return { picking: state, operation: state.operation, session: state.session, hold, zone: { id: zone.id, geometry },
     config, notBefore: dispatchNotBefore(option.mode, new Date(slot.start_at), policy),
-    restricted: profiles.some(p => p.requires_age_verification) };
+    restricted: restriction.restricted_content_present };
 }

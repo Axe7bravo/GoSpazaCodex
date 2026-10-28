@@ -4,10 +4,15 @@ import prepareM14 from "./m14-readiness";
 export default async function prepare(config: FullConfig) {
   await prepareM14(config);
   const name = config.configFile?.replaceAll("\\", "/").split("/").pop();
-  if (name !== "playwright.config.ts" && name !== "playwright.m15.config.ts" && name !== "playwright.m16.config.ts") return;
+  if (name !== "playwright.config.ts" && name !== "playwright.m15.config.ts" && name !== "playwright.m16.config.ts" && name !== "playwright.m17.config.ts") return;
   const client = await request.newContext();
   try {
     const routes = ["http://localhost:3002/", "http://localhost:3001/merchant/orders/order_fixture", "http://localhost:3000/orders/order_fixture"];
+    if (name === "playwright.config.ts" || name === "playwright.m17.config.ts") routes.push(
+      "http://localhost:3001/merchant/compliance", "http://localhost:3001/merchant/returns",
+      "http://localhost:3003/admin/restricted-commerce", "http://localhost:3000/checkout",
+      "http://localhost:3001/merchant/products/product_fixture",
+    );
     // Full-regression storefront preparation belongs outside the per-file hook
     // budget. Each request still has a bounded timeout and must succeed.
     if (name === "playwright.config.ts") routes.push(...["/", "/stores", "/stores/mstore_first", "/products/prod_tomatoes", "/search"]

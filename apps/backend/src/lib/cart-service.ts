@@ -1,4 +1,5 @@
 import { detachHistoricalCollection } from "./checkout-payment-links";
+import { RestrictedCommerce } from "./restricted-commerce";
 import { assertCheckoutMutable } from "../modules/marketplace/checkout-repository";
 import { releaseContextHold } from "../modules/marketplace/delivery-reservation-repository";
 import { addToCartWorkflow, updateLineItemInCartWorkflow, deleteLineItemsWorkflow } from "@medusajs/medusa/core-flows";
@@ -10,7 +11,7 @@ import type { CartDTO, ICartModuleService, ICustomerModuleService, IProductModul
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { BigNumber, ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
 import { cartOperation } from "./cart-lock";
-import { commerceContext } from "./commerce";
+import { commerceContext, commerceLock } from "./commerce";
 import { DiscoveryService } from "./discovery-service";
 import type { DiscoveryInput } from "./discovery-service";
 import { StorefrontService } from "./storefront-service";
@@ -199,6 +200,14 @@ export class CartFoundationService {
     return { merchantId: profile.merchant_id, storeId: store.id };
   }
 
+  private async restrictedMutation<T>(target: { merchantId: string; storeId: string }, variantId: string, work: () => Promise<T>): Promise<T> {
+    return commerceLock(this.container,target.merchantId,async () => {
+      await this.db.transaction(trx => new RestrictedCommerce(this.container).evaluate(trx,this.customerId,target.storeId,[variantId]));
+      // Same outer lock as catalogue/review writes, held across native mutation.
+      return work();
+    });
+  }
+
   private assertBinding(context: CartContext, target: { merchantId: string; storeId: string }) {
     if (context.merchant_id !== target.merchantId || context.merchant_store_id !== target.storeId) {
       throw new MedusaError(MedusaError.Types.CONFLICT, "CART_MERCHANT_CONFLICT");
@@ -229,6 +238,7 @@ export class CartFoundationService {
     if (!input.success) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Invalid cart input.");
     return cartOperation(this.container, this.customerId, async () => {
       const target = await this.target(variantId, input.data.location);
+      return this.restrictedMutation(target, variantId, async () => {
       const current = await this.current();
       if (current) {
         this.assertBinding(current.context, target);
@@ -239,6 +249,7 @@ export class CartFoundationService {
       this.mutationStarted = true;
       const { result } = await createMarketplaceCartWorkflow(this.container).run({ input: creation });
       return result;
+      });
     });
   }
 
@@ -249,6 +260,7 @@ export class CartFoundationService {
     return cartOperation(this.container, this.customerId, async () => {
       const current = input.cart_id ? await this.requireCurrent(input.cart_id) : await this.current();
       const target = await this.target(input.variant_id, input.location);
+      return this.restrictedMutation(target, input.variant_id, async () => {
       if (!current) {
         const creation = await this.createInput(target, input.variant_id, input.quantity);
         this.mutationStarted = true;
@@ -264,6 +276,7 @@ export class CartFoundationService {
         input: { cart_id: current.cart.id, items: [{ variant_id: input.variant_id, quantity: input.quantity }] },
       });
       return current.cart.id;
+      });
     });
   }
 
@@ -280,21 +293,26 @@ export class CartFoundationService {
       await assertCheckoutMutable(this.db, current.context.id);
       await detachHistoricalCollection(this.container, current.cart.id);
       const previous = Number(item.quantity);
+      const mutate = async () => {
+        if (input.quantity !== previous) {
+          this.mutationStarted = true;
+          await updateLineItemInCartWorkflow(this.container).run({
+            input: { cart_id: current.cart.id, item_id: lineId, update: { quantity: input.quantity } },
+          });
+        }
+        return current.cart.id;
+      };
       if (input.quantity > previous) {
         if (!input.location) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Choose a current delivery location.");
         if (!item.variant_id) throw unavailable();
-        this.assertBinding(current.context, await this.target(item.variant_id, input.location));
+        const target = await this.target(item.variant_id, input.location);
+        this.assertBinding(current.context, target);
         if ((await this.restoration(current.cart, current.context)).state !== "current") throw inconsistent();
+        return this.restrictedMutation(target,item.variant_id,mutate);
       }
-      if (input.quantity !== previous) {
-        // A decrease deliberately skips discovery/restoration eligibility gates.
-        // Native pricing and inventory rules still belong to Medusa.
-        this.mutationStarted = true;
-        await updateLineItemInCartWorkflow(this.container).run({
-          input: { cart_id: current.cart.id, item_id: lineId, update: { quantity: input.quantity } },
-        });
-      }
-      return current.cart.id;
+      // Decrease/removal cannot purchase more restricted goods. Preserve M8's
+      // ability to clear an ineligible cart; Pay always revalidates all lines.
+      return mutate();
     });
   }
 
@@ -335,11 +353,13 @@ export class CartFoundationService {
       if (current.context.merchant_id === target.merchantId && current.context.merchant_store_id === target.storeId) {
         throw new MedusaError(MedusaError.Types.INVALID_DATA, "The cart already belongs to this store.");
       }
+      return this.restrictedMutation(target, input.variant_id, async () => {
       const creation = await this.createInput(target, input.variant_id, input.quantity);
       this.mutationStarted = true;
       return switchMarketplaceCart(this.container, {
         ...creation,
         oldCartId: current.cart.id,
+      });
       });
     });
   }

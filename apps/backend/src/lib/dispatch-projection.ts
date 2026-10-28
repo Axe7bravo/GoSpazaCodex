@@ -24,6 +24,7 @@ export class DispatchProjection {
       const { state } = await new PickupService(this.container).locked(d.id, undefined,
         s => new HandoffService(this.container).presentation(s), true);
       if (state === "ATTENTION_REQUIRED") return { status: "ATTENTION_REQUIRED" };
+      if (state === "RETURN_REQUIRED" || state === "RETURNING_TO_STORE" || state === "RETURNED_TO_STORE") return { status: "ATTENTION_REQUIRED", delivery_phase: state };
       if (state === "IN_TRANSIT" || state === "ARRIVED" || state === "DELIVERED") return { status: "ASSIGNED", delivery_phase: state };
     }
     if (d.status !== "ASSIGNED") return { status: "FINDING_DRIVER", ...(actor === "merchant" && d.path ? { phase: d.path } : {}) };

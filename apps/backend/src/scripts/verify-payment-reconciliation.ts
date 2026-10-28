@@ -25,12 +25,14 @@ import { establishPaymentCollection, establishPaymentSession, linkedCollection }
 import { requestSchema } from "../modules/yoco/request";
 import { DeliveryReservationService } from "../lib/delivery-reservation-service";
 import RegisteredYocoPaymentService from "../modules/yoco/registered-service";
+import { CheckoutService } from "../lib/checkout-service";
+import type { PurchaserEligibilityProvider } from "../modules/marketplace/restricted-policy";
 
 const prepared = z.object({ quote: z.object({ checkout_revision: z.string() }) });
 const confirmed = prepared.extend({ attempt: z.object({ id: z.string() }) });
 
 export interface ReconciledOrderFixture extends CheckoutVerificationFixture {
-  complete(suffix: string, variantId?: string, quantity?: number): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
+  complete(suffix: string, variantId?: string, quantity?: number, purchaser?: (person: CheckoutVerificationCustomer) => Promise<PurchaserEligibilityProvider>, selectSlot?: () => Promise<string>): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
   recovery: { customerId: string; completionId: string };
 }
 
@@ -112,15 +114,68 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
             participant: index + 1, status: outcome.status, duration_ms: durations[index],
           }))));
       }
-      async function prepare(person: CheckoutVerificationCustomer, initiate = true) {
+      async function concurrentSuccessfulCompletion(scenario: string, operationId: string) {
+        let deferredWorkers = 0;
+        const worker = async () => {
+          try { await service.reconcile(operationId); }
+          catch (error) {
+            // Only a customer advisory-lock admission timeout may defer work.
+            // Do not accept failures inside native completion or its readback.
+            if (error instanceof Error && "code" in error && error.code === "55P03"
+              && /^select pg_advisory_xact_lock\(\$1::bigint\) - canceling statement due to lock timeout$/.test(error.message)) {
+              deferredWorkers++;
+              return;
+            }
+            throw error;
+          }
+        };
+        await concurrent(scenario, [worker, worker]);
+        assert.ok(deferredWorkers <= 1, "at least one completion worker must finish without lock admission failure");
+        const completed = await db<CompletionRow>("checkout_completion").where({ operation_id: operationId }).first();
+        assert.equal(completed?.state, "SUCCEEDED", JSON.stringify(completed));
+        assert.ok(completed?.terminal_receipt, "deferred work requires durable success, not an ambiguous native outcome");
+        if (deferredWorkers) {
+          // A later pass may read terminal success; never replay uncertain native work.
+          await service.reconcile(operationId);
+          assert.deepEqual(await db<CompletionRow>("checkout_completion").where({ id: completed.id }).first(), completed,
+            "deferred worker must leave the terminal completion unchanged");
+        }
+        assert.equal((await engine.listWorkflowExecutions({ workflow_id: completed.workflow_id, transaction_id: completed.transaction_id })).length, 1);
+      }
+      async function prepare(person: CheckoutVerificationCustomer, initiate = true, purchaser?: PurchaserEligibilityProvider) {
         people.push(person.id);
-        const quote = prepared.parse(expect(await http(person.cookie, "POST", "/store/gospaza/checkout/prepare", person.input)));
-        const result = confirmed.parse(expect(await http(person.cookie, "POST", "/store/gospaza/checkout/confirm", {
-          ...person.input, confirmed: true, checkout_revision: quote.quote.checkout_revision,
-        })));
+        // Optional local-only provider uses B's explicit constructor injection;
+        // ordinary prerequisite coverage retains the original HTTP path.
+        const checkout = purchaser ? new CheckoutService(container,person.id,purchaser) : null;
+        const quote = prepared.parse(checkout ? await checkout.prepare(person.input)
+          : expect(await http(person.cookie, "POST", "/store/gospaza/checkout/prepare", person.input)));
+        const confirmation = { ...person.input, confirmed: true as const, checkout_revision: quote.quote.checkout_revision };
+        const result = confirmed.parse(checkout ? await checkout.prepare(confirmation,true)
+          : expect(await http(person.cookie, "POST", "/store/gospaza/checkout/confirm", confirmation)));
         attempts.push(result.attempt.id);
         const input = { cart_id: person.cartId, attempt_id: result.attempt.id, checkout_revision: result.quote.checkout_revision, confirmed: true as const };
-        if (initiate) assert.equal((await new PaymentInitiationService(container, person.id).initiate(input)).state, "ready");
+        if (initiate) {
+          const initiation = await new PaymentInitiationService(container, person.id,purchaser).initiate(input);
+          if (initiation.state !== "ready") {
+            // Diagnostic read only: never retry or extend an expired checkout.
+            const diagnostic = await db.transaction(async trx => {
+              const attempt = await trx("checkout_attempt").where({ id: result.attempt.id }).first();
+              const hold = attempt ? await trx("delivery_reservation").where({ id: attempt.reservation_id }).first() : undefined;
+              const now = await databaseTime(trx);
+              const remaining = (value: unknown) => {
+                if (!(typeof value === "string" || value instanceof Date)) return null;
+                const time = new Date(value).getTime();
+                return Number.isFinite(time) ? time - now.getTime() : null;
+              };
+              return { result: initiation.state, attempt_state: attempt?.state ?? null, closed: !!attempt?.closed_at,
+                reservation_state: hold?.status ?? null,
+                confirmation_remaining_ms: remaining(attempt?.expires_at), hold_remaining_ms: remaining(hold?.expires_at),
+                payment_remaining_ms: remaining(attempt?.payment_deadline),
+                reservation_payment_remaining_ms: remaining(hold?.payment_deadline) };
+            });
+            assert.equal(initiation.state, "ready", "Payment initiation fixture state: " + JSON.stringify(diagnostic));
+          }
+        }
         return input;
       }
       async function operation(attemptId: string) {
@@ -241,7 +296,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         // Normal worker path, including simultaneous first reconciliation.
         const normal = await customer("reconcile-worker"), normalInput = await prepare(normal), normalOp = await operation(normalInput.attempt_id);
         await apply(event(normalOp));
-        await concurrent("first native completion", [() => service.reconcile(normalOp.id), () => service.reconcile(normalOp.id)]);
+        await concurrentSuccessfulCompletion("first native completion", normalOp.id);
         const normalCompletion = await db<CompletionRow>("checkout_completion").where({ operation_id: normalOp.id }).first();
         assert.equal(normalCompletion?.state, "SUCCEEDED", JSON.stringify(normalCompletion));
         assert.ok(normalCompletion);
@@ -280,7 +335,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
           () => service.applyInbox(earlyMessage.id), () => service.applyInbox(earlyMessage.id),
           () => cartOperation(container, early.id, () => currentCheckout(db, earlyAttempt.cart_context_id)),
         ]);
-        await concurrent("lost initiation recovery", [() => service.reconcile(earlyOperation.id), () => service.reconcile(earlyOperation.id)]);
+        await concurrentSuccessfulCompletion("lost initiation recovery", earlyOperation.id);
         assert.equal(checkoutPosts, postsAfterLostResponse, "verified evidence recovery must not POST another checkout");
         assert.equal((await db<Attempt>("checkout_attempt").where({ id: earlyInput.attempt_id }).first())?.state, "COMPLETED");
         assert.equal((await orders.listOrders({ customer_id: early.id }, { take: null })).length, 1);
@@ -403,9 +458,9 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         if (extension) {
           await extension({ ...checkoutFixture,
             recovery: { customerId: hostile.id, completionId: ambiguous.id },
-            async complete(suffix, variantId, quantity) {
-              const person = await customer(suffix, variantId, quantity);
-              const input = await prepare(person);
+            async complete(suffix, variantId, quantity, purchaser, selectSlot) {
+              const person = await customer(suffix, variantId, quantity, selectSlot);
+              const input = await prepare(person,true,purchaser ? await purchaser(person) : undefined);
               const op = await operation(input.attempt_id);
               await apply(event(op));
               await service.reconcile(op.id);

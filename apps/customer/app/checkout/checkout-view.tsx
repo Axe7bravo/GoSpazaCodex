@@ -6,6 +6,7 @@ import { SessionBoundary } from "@gospaza/ui/auth";
 import { checkoutRedirect, createCartClient, createCheckoutClient, createDeliveryClient, createLocationClient } from "@gospaza/api-client";
 import type { CartFoundation, CheckoutAttemptInput, CheckoutPreparation, CustomerCheckoutStatus, DeliverySelection, SavedAddress } from "@gospaza/contracts";
 import { authClient } from "../auth-client";
+import PurchaserPanel from "./purchaser-panel";
 
 const base = process.env.NEXT_PUBLIC_API_URL!;
 const key = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? "";
@@ -235,6 +236,7 @@ function CheckoutContent({ returning }: { returning: boolean }) {
       <button type="button" disabled={disabled} onClick={() => actions.current?.setup()}>Review current cart</button>}
     {returning && status?.state === "none" && <Link href="/checkout">Review current checkout</Link>}
     <p><Link href="/cart">Back to cart and delivery selection</Link></p>
+    {!returning && <PurchaserPanel />}
   </section>;
 }
 export function CheckoutView({ returning = false }: { returning?: boolean }) {

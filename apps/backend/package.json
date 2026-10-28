@@ -37,7 +37,9 @@
     "test:dispatch-orchestration": "medusa exec ./src/scripts/verify-dispatch-orchestration.ts",
     "test:dispatch-acceptance": "medusa exec ./src/scripts/verify-dispatch-acceptance.ts",
     "test:pickup": "medusa exec ./src/scripts/verify-pickup.ts",
-    "test:handoff": "medusa exec ./src/scripts/verify-handoff.ts"
+    "test:handoff": "medusa exec ./src/scripts/verify-handoff.ts",
+    "test:restricted-commerce": "medusa exec ./src/scripts/verify-restricted-commerce.ts",
+    "test:recipient": "medusa exec ./src/scripts/verify-recipient.ts"
   },
   "dependencies": {
     "@gospaza/config": "workspace:*",

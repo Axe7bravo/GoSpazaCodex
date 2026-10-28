@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import type { ExecArgs, IOrderModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
@@ -41,6 +42,18 @@ export default async function verifyHandoff(args: ExecArgs) {
     async function occupied(id: string, count = 1) { assert.equal((await db("dispatch_commitment").where({ delivery_id: id, status: "ASSIGNED" })).length, count); }
     try {
       const restricted = await trip("restricted");
+      // Isolated, already-shipped safety-gate fixture. M17 intentionally blocks
+      // NEW restricted sales/dispatch; do not manufacture purchaser approval or
+      // downgrade a paid snapshot through mutable catalogue fields. Escalating
+      // this fixture only proves the retained M16 fail-closed recipient hook.
+      await db.transaction(async trx => {
+        const row = await trx("delivery_operation").where({ id: restricted.delivery.id }).forUpdate().first();
+        assert.ok(row);
+        const revision = row.revision + 1, now = await databaseTime(trx);
+        await trx("delivery_operation").where({ id: row.id }).update({ restricted_content_present: true, revision, updated_at: now });
+        await trx("dispatch_event").insert({ id: "devt_"+randomUUID(), target_id: row.id,target_type: "DELIVERY",
+          revision,action: "FIXTURE_RESTRICTED_SAFETY_GATE",actor_type: "system",occurred_at: now,evidence: {} });
+      });
       let r = await handoff.read(restricted.who.identity, restricted.delivery.id);
       await handoff.arrive(restricted.who.identity, restricted.delivery.id, { expected_revision: r.revision });
       const restrictedCode = await handoff.customerCode(restricted.order.person.id, restricted.order.orderId); assert.ok(restrictedCode.code);
