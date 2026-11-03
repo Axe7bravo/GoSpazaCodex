@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { fixturePassword, retainingBrowserFixture } from "./fixtures/financial-browser";
 import { z } from "@medusajs/framework/zod";
 import type { ExecArgs, IAuthModuleService, IOrderModuleService, IUserModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
@@ -46,7 +47,7 @@ export default async function verifyOrderOperations(args: ExecArgs, extension?: 
     const restoredOwners: { memberId: string; applicationId: string; identity: string }[] = [];
     const failures: unknown[] = [];
     async function session(suffix: string, actor = "merchant") {
-      const email = prefix + suffix + "@example.test", password = randomBytes(24).toString("hex");
+      const email = prefix + suffix + "@example.test", password = fixturePassword(email);
       const registered = await auth.register("emailpass", { body: { email, password } });
       assert.ok(registered.authIdentity);
       const identity = registered.authIdentity.id;
@@ -246,6 +247,10 @@ export default async function verifyOrderOperations(args: ExecArgs, extension?: 
     for (const cookie of cookies) {
       try { expect(await http(cookie, "DELETE", "/auth/session")); } catch (error) { failures.push(error); }
     }
+    if(retainingBrowserFixture()) {
+      if(failures.length) throw new AggregateError(failures,"M18 retained merchant fixture failed.");
+      return;
+    }
     try {
       await db.transaction(async (trx) => {
         await trx("merchant").whereIn("id", [first.merchantId, second.merchantId]).orderBy("id").forUpdate().select("id");
@@ -263,6 +268,6 @@ export default async function verifyOrderOperations(args: ExecArgs, extension?: 
       if (identities.length) await auth.deleteAuthIdentities(identities);
     } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, "M11-B order operations verification failed.");
-  });
+  },retainingBrowserFixture());
   console.log("M11-B passed: authoritative provisioning, duplicate/concurrent ensures, event/read repair, native projection, tenant and role isolation. Prerequisite assertions preserved.");
 }

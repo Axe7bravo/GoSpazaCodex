@@ -56,7 +56,7 @@ function VisibleDelivery({ id }: { id: string }) {
     {phase === "ATTENTION_REQUIRED" && <p>Delivery needs attention. This does not confirm cancellation or a refund.</p>}
     {returned && <>
       <p>{returned.body}</p>
-      <p>Financial review is pending. A physical return does not confirm a refund, store credit or total adjustment.</p>
+      <p>A physical return does not confirm a refund or credit. See Payment and adjustments for the current financial status.</p>
       <p>Courier location and handoff code are no longer available.</p>
     </>}
     {phase === "DELIVERED" && <p>Delivery completed. Location and handoff code are no longer available.</p>}

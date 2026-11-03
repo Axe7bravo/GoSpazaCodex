@@ -16,6 +16,7 @@ import { currentCheckout } from "../modules/marketplace/checkout-repository";
 import type { Attempt } from "../modules/marketplace/checkout-repository";
 import { databaseTime } from "../modules/marketplace/delivery-reservation-repository";
 import { schedulingInput } from "../modules/marketplace/scheduling-policy";
+import { nativeCreditSnapshot } from "./checkout-native";
 
 const conflict = (code: string) => new MedusaError(MedusaError.Types.CONFLICT, code);
 const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Checkout unavailable.");
@@ -23,7 +24,8 @@ const missing = () => new MedusaError(MedusaError.Types.NOT_FOUND, "Checkout una
 function quote(snapshot: CheckoutSnapshot, revision: string, expires: Date | string): CheckoutQuote {
   return { address: snapshot.address, cart_id: snapshot.cart_id, address_id: snapshot.address_id,
     checkout_revision: revision, expires_at: new Date(expires).toISOString(),
-    currency_code: snapshot.currency_code, totals: snapshot.totals };
+    currency_code: snapshot.currency_code, totals: snapshot.totals,
+    ...(snapshot.store_credit ? {store_credit_minor:snapshot.store_credit.amount_minor} : {}) };
 }
 function confirmation(row: Attempt): CheckoutConfirmation {
   return { id: row.id, state: row.state,
@@ -106,6 +108,7 @@ export class CheckoutService {
             if (!method) throw conflict("CHECKOUT_NATIVE_STATE");
             const items = checkoutSnapshot.shape.items.parse(nativeCheckoutItems(native));
             const snapshot = checkoutSnapshot.parse({
+              store_credit: nativeCreditSnapshot(native),
               restricted_commerce: await this.compliance.evaluate(trx, this.customerId,
                 context.merchant_store_id, items.map(item => item.variant_id)),
               customer_id: this.customerId, cart_id: cart.id, cart_context_id: context.id,
@@ -119,7 +122,10 @@ export class CheckoutService {
             await assertFresh();
             const revision = checkoutRevision(snapshot);
             const result = quote(snapshot, revision, hold.expires_at);
-            if (!confirm) return { quote: result, attempt: null, reconfirmation_required: false };
+            if (!confirm) {
+
+              return { quote: result, attempt: null, reconfirmation_required: false };
+            }
             if (!("checkout_revision" in input) || input.checkout_revision !== revision) {
               // Native refresh succeeded, but no snapshot is frozen. The caller
               // must explicitly confirm this new server-issued quote.

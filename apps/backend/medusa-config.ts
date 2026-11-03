@@ -36,6 +36,8 @@ module.exports = defineConfig({
       providers: [{ resolve: "./src/modules/yoco", id: "yoco", options: { ...yoco } }],
     } }] : []),
     { resolve: "./src/modules/marketplace" },
+    // Module only: no Loyalty plugin routes, checkout hooks or stock service.
+    { resolve: "./src/modules/store-credit" },
     privateFileConfig(process.env),
     { resolve: "@medusajs/medusa/fulfillment", options: {
       providers: [{ resolve: "@medusajs/medusa/fulfillment-manual", id: "manual" }],

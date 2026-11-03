@@ -38,11 +38,11 @@ export interface CheckoutVerificationCustomer {
 export interface CheckoutVerificationFixture {
   prefix: string;
   fixture: CartVerificationFixture;
-  customer(suffix: string, variantId?: string, quantity?: number, selectSlot?: () => Promise<string>): Promise<CheckoutVerificationCustomer>;
+  customer(suffix: string, variantId?: string, quantity?: number, selectSlot?: () => Promise<string>, reuse?:CheckoutVerificationCustomer): Promise<CheckoutVerificationCustomer>;
   http(cookie: string, method: string, route: string, body?: unknown): Promise<{ status: number; body: unknown }>;
   expect(result: { status: number; body: unknown }, status?: number): unknown;
 }
-async function verify(fixture: CartVerificationFixture, extension?: (fixture: CheckoutVerificationFixture) => Promise<void>) {
+async function verify(fixture: CartVerificationFixture, extension?: (fixture: CheckoutVerificationFixture) => Promise<void>,retainFinancialFixture=false) {
   const { container, first, second, request, location } = fixture;
   const db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
   const carts = container.resolve<ICartModuleService>(Modules.CART);
@@ -104,19 +104,19 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
         booking_cutoff_at: new Date(now.getTime() + 82800000).toISOString(), capacity: 30, enabled: true,
       }, prefix, reason);
     }
-    async function customer(suffix: string, variantId = first.variantId, quantity = 1, selectSlot?: () => Promise<string>) {
-      const person = await fixture.createCustomer(prefix + suffix);
+    async function customer(suffix: string, variantId = first.variantId, quantity = 1, selectSlot?: () => Promise<string>, reuse?:CheckoutVerificationCustomer) {
+      const person = reuse ?? await fixture.createCustomer(prefix + suffix);
       const cart = z.object({ cart_id: z.string() }).parse(expect(await http(person.cookie, "POST",
         "/store/gospaza/cart/items", { variant_id: variantId, quantity, location })));
       const point = z.object({ latitude: z.number(), longitude: z.number() }).parse(location);
-      expect(await http(person.cookie, "POST", "/store/gospaza/addresses", {
+      if(!reuse) expect(await http(person.cookie, "POST", "/store/gospaza/addresses", {
         first_name: "Fixture", last_name: "Customer", address_1: "1 Fixture Street", address_2: "",
         city: "Fixture", province: "Fixture", postal_code: "1234", country_code: "za", phone: "",
         location: { ...point, source: "manual" },
       }), 201);
       const owned = z.object({ addresses: z.array(z.object({ id: z.string() })) })
         .parse(expect(await http(person.cookie, "GET", "/store/gospaza/addresses")));
-      for (const address of owned.addresses) addresses.push({ id: address.id, cookie: person.cookie });
+      if(!reuse) for (const address of owned.addresses) addresses.push({ id: address.id, cookie: person.cookie });
       assert.equal(owned.addresses.length, 1);
       const address = owned.addresses[0]; assert.ok(address);
       const selectedSlotId = selectSlot ? await selectSlot() : undefined;
@@ -380,6 +380,10 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
     try { await db.raw(`drop trigger ${faultName} on checkout_attempt; drop function ${faultName}();`); }
     catch (error) { failures.push(error); }
   }
+  if(retainFinancialFixture) {
+    if(failures.length) throw new AggregateError(failures,"Retained checkout configuration fixture failed.");
+    return;
+  }
   for (const address of addresses) {
     try { expect(await http(address.cookie, "DELETE", "/store/gospaza/addresses/" + address.id)); }
     catch (error) { failures.push(new Error("M10-C address cleanup failed: " + prefix, { cause: error })); }
@@ -405,8 +409,11 @@ async function verify(fixture: CartVerificationFixture, extension?: (fixture: Ch
 
 export async function withCheckoutVerification(
   args: ExecArgs, extension: (fixture: CheckoutVerificationFixture) => Promise<void>,
+  retainFinancialFixture=false,
+  prepareTimeoutMs?:number,
+  confirmTimeoutMs?:number,
 ) {
-  await verifyCartFoundation(args, (fixture) => verify(fixture, extension));
+  await verifyCartFoundation(args, (fixture) => verify(fixture, extension,retainFinancialFixture),retainFinancialFixture,prepareTimeoutMs,confirmTimeoutMs);
 }
 
 export default async function verifyCheckoutFoundation(args: ExecArgs) {

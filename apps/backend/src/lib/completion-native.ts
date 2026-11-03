@@ -7,6 +7,7 @@ import type { CheckoutSnapshot } from "../modules/marketplace/checkout-policy";
 import { checkoutMoney } from "./checkout-native";
 import { verifiedPayment } from "../modules/yoco/webhook";
 import { YOCO_PROVIDER_ID } from "./yoco-config";
+import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 
 const nativeExecution = z.object({
   id: z.string(), workflow_id: z.string(), transaction_id: z.string(), state: z.string(),
@@ -75,7 +76,7 @@ export async function validateCompletedOrder(container: MedusaContainer, operati
   if (link.cart_id !== snapshot.cart_id) throw new Error("COMPLETION_CART_RELATIONSHIP");
   const order = await container.resolve<IOrderModuleService>(Modules.ORDER).retrieveOrder(link.order_id, {
     select: ["id", "customer_id", "currency_code", "sales_channel_id", "status", "total", "subtotal", "tax_total", "discount_total", "shipping_total"],
-    relations: ["items", "items.tax_lines", "items.adjustments", "shipping_methods", "shipping_methods.tax_lines", "shipping_methods.adjustments", "shipping_address", "transactions"],
+      relations: ["credit_lines", "items", "items.tax_lines", "items.adjustments", "shipping_methods", "shipping_methods.tax_lines", "shipping_methods.adjustments", "shipping_address", "transactions"],
   });
   const cart = await container.resolve<ICartModuleService>(Modules.CART).retrieveCart(snapshot.cart_id);
   const linked = await query.graph({ entity: "order", fields: ["id", "payment_collections.id"], filters: { id: order.id } });
@@ -92,6 +93,17 @@ export async function validateCompletedOrder(container: MedusaContainer, operati
     tax_total_minor: checkoutMoney(order.tax_total), discount_total_minor: checkoutMoney(order.discount_total),
     shipping_total_minor: checkoutMoney(order.shipping_total) };
   if (JSON.stringify(totals) !== JSON.stringify(snapshot.totals)) throw new Error("COMPLETION_TOTAL_MISMATCH");
+  const funding=snapshot.store_credit;
+  const credits=order.credit_lines ?? [];
+  if(credits.length!==(funding ? 1:0)) throw new Error("COMPLETION_CREDIT_MISMATCH");
+  if(funding) {
+    const line=credits[0];
+    const debit=await container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION)("checkout_credit_redemption")
+      .where({attempt_id:operation.checkout_attempt_id,account_id:funding.account_id,customer_id:snapshot.customer_id}).whereNull("restore_id").first();
+    if(!line || line.reference!=="store-credit" || line.reference_id!==funding.account_id || checkoutMoney(line.amount)!==funding.amount_minor
+      || !debit || Number(debit.amount_minor)!==funding.amount_minor || Number(debit.external_minor)!==Number(operation.amount_minor)
+      || Number(debit.gross_minor)!==funding.gross_minor) throw new Error("COMPLETION_CREDIT_MISMATCH");
+  }
   const items = (order.items ?? []).map((item) => ({ variant_id: item.variant_id, quantity: Number(item.quantity), unit_price_minor: checkoutMoney(item.unit_price), total_minor: checkoutMoney(item.total) }))
     .sort((a, b) => String(a.variant_id).localeCompare(String(b.variant_id)));
   const expected = snapshot.items.map(({ variant_id, quantity, unit_price_minor, total_minor }) => ({ variant_id, quantity, unit_price_minor, total_minor }))
@@ -108,5 +120,6 @@ export async function validateCompletedOrder(container: MedusaContainer, operati
   if (!capture || !order.transactions?.some((transaction) => transaction.reference === "capture" && transaction.reference_id === capture.id && transaction.currency_code === "zar"
     && checkoutMoney(transaction.amount) === Number(operation.amount_minor))) throw new Error("COMPLETION_CAPTURE_TRANSACTION_MISSING");
   return { order_id: order.id, cart_id: cart.id, payment_id: payment.id, capture_id: capture.id,
-    payment_collection_id: operation.payment_collection_id, amount_minor: Number(operation.amount_minor), currency: "zar" };
+    payment_collection_id: operation.payment_collection_id, amount_minor: Number(operation.amount_minor), currency: "zar",
+    ...(funding ? {store_credit_minor:funding.amount_minor,gross_minor:funding.gross_minor}:{}) };
 }

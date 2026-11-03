@@ -32,8 +32,10 @@ export class DeliveryReservationService {
   // against M6 tariff changes. Customer advisory lock is already held here.
   private configured<T>(context: CartContext, work: (trx: Knex.Transaction, policy: PolicyRow) => Promise<T>) {
     return commerceLock(this.container, "scheduling-configuration", () =>
-      commerceLock(this.container, "fulfillment:" + context.merchant_store_id, () =>
-        this.db.transaction(async (trx) => {
+      commerceLock(this.container, "fulfillment:" + context.merchant_store_id, () => {
+
+        return this.db.transaction(async (trx) => {
+
           await trx("merchant").where({ id: context.merchant_id }).forShare();
           await trx("merchant_store").where({ id: context.merchant_store_id }).forShare();
           const assignments = await trx<{ service_zone_id: string }>("merchant_store_service_zone")
@@ -44,8 +46,10 @@ export class DeliveryReservationService {
             .whereNull("deleted_at").forShare().first();
           if (!policy) throw conflict("DELIVERY_UNAVAILABLE");
           await trx("delivery_option_configuration").where({ merchant_store_id: context.merchant_store_id }).orderBy("id").forShare();
+
           return work(trx, policy);
-        })));
+        });
+      }));
   }
 
   private async resolve(context: CartContext, location: DiscoveryInput) {
@@ -54,7 +58,6 @@ export class DeliveryReservationService {
     return { point, assignment, options: assignment.options.filter((option) => option.enabled &&
       (option.mode === "ASAP" ? assignment.asap_enabled : assignment.scheduled_enabled)) };
   }
-
 
   // Shared by restoration and checkout; M9 remains the sole configuration,
   // serviceability and native option/pricing authority.

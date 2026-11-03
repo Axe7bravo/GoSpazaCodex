@@ -12,6 +12,7 @@ export interface StoreRow {
 export const commerceUnavailable = () => new MedusaError(MedusaError.Types.CONFLICT, "Catalogue infrastructure is unavailable. Contact support.");
 export async function commerceLock<T>(container: MedusaContainer, merchantId: string, work: () => Promise<T>): Promise<T> {
   const db = container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
+
   return db.transaction(async (trx) => {
     const key = createHash("sha256").update("gospaza:commerce:" + merchantId).digest().readBigInt64BE().toString();
     await trx.raw("SET LOCAL lock_timeout = '10s'");

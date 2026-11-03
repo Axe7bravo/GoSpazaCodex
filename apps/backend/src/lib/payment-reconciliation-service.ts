@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { RefundService } from "./refund-service";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import type { IPaymentModuleService, MedusaContainer } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
@@ -49,6 +50,8 @@ export class PaymentReconciliationService {
     const inbox = await this.db<InboxRow>("yoco_inbox").where({ id }).first();
     if (!inbox || inbox.state !== "RECEIVED") return;
     const event = verifiedYocoEvent.parse(inbox.event);
+    if ((event.type === "refund.succeeded" || event.type === "refund.failed")
+      && await new RefundService(this.container).applyEvent(id, event)) return;
     const operation = "operationId" in event
       ? await this.db<OperationRow>("provider_operation").where({ id: event.operationId }).first()
       : await this.db<OperationRow>("provider_operation").where({ checkout_id: event.checkoutId }).first();

@@ -32,11 +32,44 @@ const prepared = z.object({ quote: z.object({ checkout_revision: z.string() }) }
 const confirmed = prepared.extend({ attempt: z.object({ id: z.string() }) });
 
 export interface ReconciledOrderFixture extends CheckoutVerificationFixture {
-  complete(suffix: string, variantId?: string, quantity?: number, purchaser?: (person: CheckoutVerificationCustomer) => Promise<PurchaserEligibilityProvider>, selectSlot?: () => Promise<string>): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
+  complete(suffix: string, variantId?: string, quantity?: number, purchaser?: (person: CheckoutVerificationCustomer) => Promise<PurchaserEligibilityProvider>, selectSlot?: () => Promise<string>, funding?: {
+    customer: CheckoutVerificationCustomer;
+    beforeQuote(person: CheckoutVerificationCustomer): Promise<void>;
+    firstPay?(person: CheckoutVerificationCustomer,input:{cart_id:string;attempt_id:string;checkout_revision:string;confirmed:true},checkoutPostCount:()=>number):Promise<void>;
+    afterInitiation?(person: CheckoutVerificationCustomer,input:{cart_id:string;attempt_id:string;checkout_revision:string;confirmed:true}):Promise<void>;
+  }): Promise<{ person: CheckoutVerificationCustomer; orderId: string; attemptId: string }>;
   recovery: { customerId: string; completionId: string };
 }
 
-export default async function verifyPaymentReconciliation(args: ExecArgs, extension?: (fixture: ReconciledOrderFixture) => Promise<void>) {
+type RetainedCheckout = Pick<ReconciledOrderFixture,"complete"|"http"|"expect"> & {
+  fixture: Pick<ReconciledOrderFixture["fixture"],"container"|"second">;
+};
+
+export async function withRetainedCheckoutAfterReconciliation(args:ExecArgs,work:(fixture:RetainedCheckout)=>Promise<void>) {
+  let runAfterTeardown:(()=>Promise<void>)|undefined;
+  const originalFetch=globalThis.fetch;
+  await verifyPaymentReconciliation(args,async ({fixture,complete,http,expect})=>{
+    const checkout={fixture:{container:fixture.container,second:fixture.second},complete,http,expect};
+    const fixtureFetch=globalThis.fetch;
+    const {withFreshSessions}=fixture;
+    runAfterTeardown=async ()=>{
+      assert.equal(globalThis.fetch,originalFetch,"parent transport must be restored before retained checkout");
+      globalThis.fetch=fixtureFetch;
+      try { await withFreshSessions(()=>work(checkout)); }
+      finally { globalThis.fetch=originalFetch; }
+    };
+  },true);
+  assert.ok(runAfterTeardown);
+  await runAfterTeardown();
+}
+
+const checkoutSetupTimeoutMs = 45_000;
+
+export default async function verifyPaymentReconciliation(
+  args: ExecArgs, extension?: (fixture: ReconciledOrderFixture) => Promise<void>, retainFinancialFixture=false,
+) {
+  if (retainFinancialFixture && (process.env.APP_ENV !== "test" || process.env.M18_C2B_RETAIN_FINANCIAL_FIXTURES !== "true"))
+    throw new Error("Credit checkout verification requires an isolated test database and explicit financial fixture retention.");
   const loadedConfig = yocoConfiguration(process.env);
   if (!loadedConfig || !loadedConfig.secretKey.startsWith("sk_test_") || !["development", "test"].includes(process.env.APP_ENV ?? "")) {
     throw new Error("M10-E verification requires local test-mode Yoco configuration.");
@@ -458,9 +491,12 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         if (extension) {
           await extension({ ...checkoutFixture,
             recovery: { customerId: hostile.id, completionId: ambiguous.id },
-            async complete(suffix, variantId, quantity, purchaser, selectSlot) {
-              const person = await customer(suffix, variantId, quantity, selectSlot);
-              const input = await prepare(person,true,purchaser ? await purchaser(person) : undefined);
+            async complete(suffix, variantId, quantity, purchaser, selectSlot, funding) {
+              const person = await customer(suffix, variantId, quantity, selectSlot, funding?.customer);
+              await funding?.beforeQuote(person);
+              const input = await prepare(person,!funding?.firstPay,purchaser ? await purchaser(person) : undefined);
+              await funding?.firstPay?.(person,input,()=>checkoutPosts);
+              await funding?.afterInitiation?.(person,input);
               const op = await operation(input.attempt_id);
               await apply(event(op));
               await service.reconcile(op.id);
@@ -474,6 +510,10 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
       } catch (error) { failures.push(error); }
 
       // Known fixture IDs only; native cleanup uses public module/link APIs.
+      if (retainFinancialFixture) {
+        if (failures.length) throw new AggregateError(failures, "Retained financial checkout verification failed.");
+        return;
+      }
       const rows = await db<OperationRow>("provider_operation").whereIn("checkout_attempt_id", attempts);
       const nativeOrders = await orders.listOrders({ customer_id: people }, { relations: ["items"], take: null });
       for (const order of nativeOrders) {
@@ -519,7 +559,7 @@ export default async function verifyPaymentReconciliation(args: ExecArgs, extens
         });
       } catch (error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, "M10-E reconciliation verification failed.");
-    });
+    },retainFinancialFixture,checkoutSetupTimeoutMs,checkoutSetupTimeoutMs);
   } finally { globalThis.fetch = originalFetch; }
   console.log("M10-E passed: verified inbox, concurrent deduplication, native terminal readback, one completion dispatch, recovery freeze/capacity, late capture and pending refund recovery. External Yoco transport was substituted.");
 }

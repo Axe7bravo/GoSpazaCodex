@@ -5,8 +5,9 @@ import YocoPaymentService from "./service";
 import type { YocoOptions, YocoWebhookPayload } from "./types";
 
 // Medusa 2.18 load-internal injects PG_CONNECTION into the module container.
-// Provider registration receives that same container. No private payment service
-// or native-table access is used; the adapter only owns Marketplace tables.
+// Provider registration receives that same container. Writes belong only to
+// Marketplace coordination tables. C1 additionally reads the native provisional
+// Refund by the ID Medusa passes to the callback (documented in its store).
 export default class RegisteredYocoPaymentService extends YocoPaymentService {
   static identifier = "yoco";
   // Even an already-queued native webhook event cannot enter Medusa's automatic

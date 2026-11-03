@@ -657,6 +657,12 @@ Do not represent a refund as complete before authoritative provider/native confi
 
 Retain the existing customer-scoped PostgreSQL advisory lock as the outer customer/cart boundary.
 
+For two identical simultaneous first Pay requests on a valid confirmed cart, at least one caller must receive the ready attempt. A second admitted caller must receive the same result. A caller that times out acquiring the customer-cart Pay lock may receive HTTP 409 `CHECKOUT_ALREADY_PROCESSING` before any payment work. Concurrent add-item and switch-store requests must leave the frozen cart unchanged and receive a cart-state conflict.
+
+The requests share one attempt, provider operation, external initiation and correlated native session. A later successful replay reads back the same ready attempt and payment deadline without another initiation. When Store Credit is applied, the same attempt may debit its funding only once. The M18-C2B checkout race verifier exercises that debit boundary.
+
+The same admission rule applies when two callers explicitly recover an uncertain initiation. At least one must recover the original ready attempt. The other must return the identical result or receive the specific Pay admission conflict. In the lost-response scenario the provider already created the checkout. Recovery sends one identical POST using the original idempotency key and body. The original send and its recovery replay have one economic effect. A subsequent sequential recovery must return the same redirect and deadline without another POST.
+
 Preserve M9 deterministic slot locking for capacity changes.
 
 Use database constraints/locks where applicable.

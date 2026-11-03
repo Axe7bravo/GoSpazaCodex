@@ -277,7 +277,8 @@ export class RestrictedCommerce {
     const store = await trx<Store>("merchant_store").where({ id: storeId }).whereNull("deleted_at").first();
     if (!store) throw missing();
     const ids = [...new Set(variants)].sort();
-    const native = await this.container.resolve<IProductModuleService>(Modules.PRODUCT).listProductVariants({ id: ids }, { select: ["id","product_id"], take: null });
+    const native = await this.container.resolve<IProductModuleService>(Modules.PRODUCT)
+      .listProductVariants({ id: ids }, { select: ["id","product_id"], take: null });
     const classifications: RestrictedSnapshot["classifications"] = [];
     for (const id of ids) {
       const productId = native.find(v => v.id === id)?.product_id;

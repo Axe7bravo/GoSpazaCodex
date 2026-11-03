@@ -1,6 +1,7 @@
 import type { AddressWrite } from "./location";
 // Server snapshots only. No payment or provider authority is accepted from UI.
 export interface CheckoutQuote {
+  store_credit_minor?: number;
   address?: Omit<AddressWrite, "location">;
   cart_id: string;
   address_id: string;

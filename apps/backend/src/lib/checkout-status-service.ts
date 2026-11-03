@@ -74,7 +74,8 @@ export class CheckoutStatusService {
           ...(attempt.payment_deadline ? { payment_deadline: new Date(attempt.payment_deadline).toISOString() } : {}),
           quote: { cart_id: snapshot.cart_id, address_id: snapshot.address_id, address: snapshot.address,
             checkout_revision: attempt.checkout_revision, expires_at: new Date(attempt.expires_at).toISOString(),
-            currency_code: snapshot.currency_code, totals: snapshot.totals } },
+            currency_code: snapshot.currency_code, totals: snapshot.totals,
+            ...(snapshot.store_credit ? {store_credit_minor:snapshot.store_credit.amount_minor} : {}) } },
       };
     });
   }

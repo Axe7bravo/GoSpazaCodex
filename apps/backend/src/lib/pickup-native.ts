@@ -5,6 +5,7 @@ import { createOrderFulfillmentWorkflow, createOrderShipmentWorkflow } from "@me
 import { pickupComponentSignature, pickupConflict } from "../modules/marketplace/pickup-policy";
 import type { PickupInput, PickupOperation, PickupManifest } from "../modules/marketplace/pickup-policy";
 import { completionObservation } from "./completion-native";
+import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 
 const number = (value: unknown) => {
   if (value === null || value === undefined || typeof value === "boolean" || typeof value === "string" && !value.trim()) throw pickupConflict();
@@ -105,12 +106,19 @@ export class NativePickup implements PickupNative {
     }
     if (op.input.items.some(i => !order.items.some(l => l.id === i.id))) throw pickupConflict();
     const current = await this.container.resolve<IInventoryService>(Modules.INVENTORY).listReservationItems({ line_item_id: op.input.items.map(i => i.id) }, { take: null });
+    const releases=op.input.reservations.some(r=>r.remaining>0)
+      ? await this.container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION)("omission_reservation_release")
+        .where({order_id:op.input.order_id,location_id:op.input.location_id,status:"COMPLETED"}):[];
+    let retained=0;
     for (const before of op.input.reservations) {
       const matches = current.filter(r => r.line_item_id === before.line_item_id && r.inventory_item_id === before.inventory_item_id);
-      if (before.remaining === 0 ? matches.length !== 0 : matches.length !== 1 || matches[0]?.id !== before.id
+      const released=releases.some(row=>row.line_id===before.line_item_id && z.array(z.object({id:z.string(),inventory_item_id:z.string(),quantity:z.number().int().positive()}))
+        .parse(row.reservations).some(r=>r.id===before.id && r.inventory_item_id===before.inventory_item_id && r.quantity===before.remaining));
+      if(before.remaining>0 && !released) retained++;
+      if (before.remaining === 0 || released ? matches.length !== 0 : matches.length !== 1 || matches[0]?.id !== before.id
         || matches[0]?.location_id !== before.location_id || number(matches[0]?.quantity) !== before.remaining) throw pickupConflict();
     }
-    if (current.length !== op.input.reservations.filter(r => r.remaining > 0).length) throw pickupConflict();
+    if (current.length !== retained) throw pickupConflict();
     return { fulfillment_id: f.id, shipped_at: f.shipped_at ? new Date(String(f.shipped_at)).toISOString() : null };
   }
 }

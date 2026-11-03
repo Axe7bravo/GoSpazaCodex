@@ -6,6 +6,7 @@ import { YocoProviderError, type YocoOptions } from "./types";
 
 export const identifier = z.string().min(1).max(200).regex(/^[a-zA-Z0-9_-]+$/);
 export const minorAmount = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const YOCO_MINIMUM_MINOR = 200;
 export const checkoutReceipt = z.object({
   id: identifier,
   redirectUrl: z.string().url(),

@@ -20,6 +20,7 @@ export const orderUnavailable = () => new MedusaError(MedusaError.Types.CONFLICT
 const terminalReceipt = z.object({
   order_id: resourceId, cart_id: resourceId, payment_id: resourceId, capture_id: resourceId,
   payment_collection_id: resourceId, amount_minor: z.number().int().nonnegative(), currency: z.literal("zar"),
+  store_credit_minor:z.number().int().positive().optional(), gross_minor:z.number().int().positive().optional(),
   workflow_id: z.string().min(1), transaction_id: z.string().min(1), execution_id: z.string().min(1),
   run_id: z.string().min(1), verified_at: z.string().datetime(),
 });
@@ -39,7 +40,8 @@ export function completedOrderHandoff(value: unknown) {
   if (r.order_id !== h.order_id || r.cart_id !== h.cart_id || s.cart_id !== h.cart_id
     || s.cart_context_id !== h.context_id || s.merchant_id !== h.merchant_id
     || s.merchant_store_id !== h.merchant_store_id || s.reservation_id !== h.reservation_id
-    || r.amount_minor !== s.totals.total_minor || r.workflow_id !== h.workflow_id
+    || r.amount_minor !== s.totals.total_minor || r.store_credit_minor!==s.store_credit?.amount_minor
+    || r.gross_minor!==s.store_credit?.gross_minor || r.workflow_id !== h.workflow_id
     || r.transaction_id !== h.transaction_id || r.execution_id !== h.execution_id || r.run_id !== h.run_id) {
     throw orderUnavailable();
   }

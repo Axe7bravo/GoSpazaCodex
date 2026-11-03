@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import ShortagePanel from "./shortage-panel";
+import FinancialResolution from "./financial-resolution";
 import { useEffect, useRef, useState } from "react";
 import type { CustomerOrder, OrderOperationStatus } from "@gospaza/contracts";
 import { createCustomerOrderClient, OrderError } from "@gospaza/api-client";
@@ -14,7 +15,7 @@ const client = createCustomerOrderClient(process.env.NEXT_PUBLIC_API_URL!, proce
 const copy: Record<OrderOperationStatus, string> = {
   PENDING_ACCEPTANCE: "Your order has been received and is awaiting merchant confirmation.",
   ACCEPTED: "The merchant has accepted your order.",
-  REJECTED: "This order will not be fulfilled. Payment resolution is still pending.",
+  REJECTED: "This order will not be fulfilled. See payment and adjustments for its financial status.",
 };
 function Content({ id }: { id: string }) {
   const [order, setOrder] = useState<CustomerOrder | null>(null);
@@ -57,14 +58,15 @@ function Content({ id }: { id: string }) {
       <p>{copy[order.operational_status]}</p>
       <p>{order.store.name} · Placed {orderTime(order.created_at)}</p>
       <OrderSummary order={order} />
+      <FinancialResolution id={order.id}/>
       {order.operational_status === "ACCEPTED" && <OrderDispatch id={order.id} actor="customer"
         baseUrl={process.env.NEXT_PUBLIC_API_URL!} publishableKey={process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""} details={<CustomerDelivery id={order.id} />} />}
-      {order.operational_status !== "REJECTED" && <ShortagePanel key={order.id} order={order} />}
+      {order.operational_status !== "REJECTED" && <ShortagePanel order={order} />}
     </>}
   </section>;
 }
 export default function CustomerOrderView({ id }: { id: string }) {
   return <main className="storefront"><SessionBoundary client={authClient} title="Your order">
-    {(_identity, customer) => <Content key={customer?.id} id={id} />}
+    {(_identity, customer) => <Content key={customer?.id+":"+id} id={id} />}
   </SessionBoundary></main>;
 }

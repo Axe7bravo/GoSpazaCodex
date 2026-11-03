@@ -6,7 +6,7 @@ import type Session from "./models/provider-session";
 import type { Attempt } from "./checkout-repository";
 import { databaseTime } from "./delivery-reservation-repository";
 import { checkoutSnapshot } from "./checkout-policy";
-import { checkoutReceipt } from "../yoco/validation";
+import { checkoutReceipt, YOCO_MINIMUM_MINOR } from "../yoco/validation";
 import { fingerprint, initiationRequest } from "../yoco/request";
 import {
   YocoOperationStore, YocoProviderError, type YocoOperation, type CheckoutReceipt,
@@ -16,15 +16,38 @@ import type { CompensationRow } from "./reconciliation-types";
 import { refundReceipt } from "../yoco/validation";
 import { verifiedRefund } from "../yoco/webhook";
 import { verifiedPayment } from "../yoco/webhook";
+import { withRefund, updateRefund } from "./refund-repository";
+import { cents } from "../yoco/validation";
+import type { RefundRow, RefundAttemptRow } from "./refund-policy";
 
 export type OperationRow = Omit<InferTypeOf<typeof Operation>, "amount_minor"> & { amount_minor: string | number };
 type SessionRow = InferTypeOf<typeof Session>;
 const denied = () => new YocoProviderError("YOCO_CORRELATION_MISMATCH");
 
-// SQL stays in Marketplace-owned coordination tables. Native resources are
-// established/read by the orchestration service through Medusa public APIs.
+// Writes stay in Marketplace-owned coordination tables. Native orchestration
+// uses public APIs; the record-only C1 provider callback has one documented
+// read-only native Refund lookup because Medusa passes its ID, not metadata.
 export class PgYocoOperationStore extends YocoOperationStore {
   constructor(private db: Knex) { super(); }
+
+  async recordApprovedRefund(operationId: string, nativeRefundId: string, amountMinor: number) {
+    // Read-only native-table inspection is necessary here: Medusa passes the
+    // provisional Refund ID, but not refund metadata, to its provider callback.
+    // All native writes remain inside Payment.refundPayment.
+    const native = await this.db("refund").where({ id: nativeRefundId }).whereNull("deleted_at").first();
+    const id = native?.metadata?.gospazaRefundOperationId;
+    if (typeof id !== "string") return false;
+    return withRefund(this.db, id, async (trx, row: RefundRow) => {
+      const attempt = row.current_attempt_id ? await trx<RefundAttemptRow>("provider_refund_attempt").where({ id: row.current_attempt_id }).first() : undefined;
+      if (row.provider_operation_id !== operationId || row.status !== "PROVIDER_SUCCEEDED"
+        || !row.native_dispatched_at || row.native_refund_id && row.native_refund_id !== nativeRefundId
+        || native.payment_id !== row.payment_id || amountMinor !== Number(row.amount_minor)
+        || cents(native.amount, "ZAR") !== amountMinor || !attempt?.verified_event_id || attempt.status !== "SUCCEEDED"
+        || native.metadata?.gospazaProviderRefundId !== attempt.provider_refund_id) throw denied();
+      if (!row.native_refund_id) await updateRefund(trx, row, { native_refund_id: nativeRefundId }, "NATIVE_REFUND_CALLBACK_VERIFIED");
+      return true;
+    });
+  }
 
   async row(id: string) {
     const row = await this.db<OperationRow>("provider_operation").where({ id }).whereNull("deleted_at").first();
@@ -66,7 +89,7 @@ export class PgYocoOperationStore extends YocoOperationStore {
     if (existing) return existing;
     const snapshot = checkoutSnapshot.parse(attempt.snapshot);
     const amount = snapshot.totals.total_minor;
-    if (amount < 200) throw new YocoProviderError("YOCO_INVALID_INPUT");
+    if (amount < YOCO_MINIMUM_MINOR) throw new YocoProviderError("YOCO_INVALID_INPUT");
     const id = "yop_" + randomUUID();
     const requestJson = initiationRequest(id, attempt.id, amount, config);
     const [created] = await trx<OperationRow>("provider_operation").insert({
