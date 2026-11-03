@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { reviewFixtureGrocery } from "./fixtures/restricted-commerce";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { fixturePassword } from "./fixtures/financial-browser";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import type { ExecArgs, IApiKeyModuleService, IAuthModuleService, ICartModuleService, ICustomerModuleService, IProductModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
@@ -53,8 +54,10 @@ function initializationDiagnostics(attempts: PromiseSettledResult<string>[]): st
 }
 
 export interface CartVerificationFixture {
+  publishableKey: string;
   container: ExecArgs["container"];
   createCustomer(suffix: string): Promise<{ id: string; cookie: string }>;
+  withFreshSessions(work: () => Promise<void>): Promise<void>;
   request(path: string, cookie?: string, method?: string, body?: unknown): Promise<Response>;
   first: { merchantId: string; store: { id: string }; channelId: string; variantId: string };
   second: { merchantId: string; store: { id: string }; channelId: string; variantId: string };
@@ -65,6 +68,9 @@ export interface CartVerificationFixture {
 export default async function verifyCartFoundation(
   { container }: ExecArgs,
   verifyMutations?: (fixture: CartVerificationFixture) => Promise<void>,
+  retainFinancialFixture = false,
+  prepareTimeoutMs = 30_000,
+  confirmTimeoutMs = 30_000,
 ) {
   if (!["development", "test"].includes(process.env.APP_ENV ?? "")) throw new Error("M8-B verification is local-only.");
   const base = new URL(process.env.BACKEND_URL!);
@@ -86,8 +92,11 @@ export default async function verifyCartFoundation(
   const failures: unknown[] = [];
   const key = await keys.createApiKeys({ title: prefix, type: "publishable", created_by: prefix });
   async function call(path: string, cookie = "", method = "GET", body?: unknown, token?: string) {
+    let timeoutMs = 30_000;
+    if (method === "POST" && path === "/store/gospaza/checkout/prepare") timeoutMs = prepareTimeoutMs;
+    if (method === "POST" && path === "/store/gospaza/checkout/confirm") timeoutMs = confirmTimeoutMs;
     return fetch(new URL(path, base), {
-      method, signal: AbortSignal.timeout(30000),
+      method, signal: AbortSignal.timeout(timeoutMs),
       headers: { "x-publishable-api-key": key.token, ...(cookie ? { Cookie: cookie } : {}),
         ...(token ? { Authorization: "Bearer " + token } : {}),
         ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
@@ -100,7 +109,7 @@ export default async function verifyCartFoundation(
     return result;
   }
   async function customer(suffix: string) {
-    const email = prefix + suffix + "@example.test", password = randomBytes(24).toString("hex");
+    const email = prefix + suffix + "@example.test", password = fixturePassword(email);
     const registration = await auth.register("emailpass", { body: { email, password } });
     assert.ok(registration.authIdentity);
     identities.push(registration.authIdentity.id);
@@ -305,7 +314,22 @@ export default async function verifyCartFoundation(
     assert.equal((await carts.retrieveCart(orphan.id, { relations: ["items"] })).items?.length, 0);
 
     if (verifyMutations) {
-      await verifyMutations({ container, createCustomer: customer, request: call, first, second, location: filters, regionId: region.id });
+      await verifyMutations({ container, publishableKey:key.token, createCustomer: customer, request: call, first, second, location: filters, regionId: region.id,
+        async withFreshSessions(work) {
+          const start = cookies.length;
+          const errors: unknown[] = [];
+          try { await work(); } catch (error) { errors.push(error); }
+          for (const cookie of cookies.splice(start)) {
+            try { await expectStatus(call("/auth/session", cookie, "DELETE"), 200); }
+            catch (error) { errors.push(error); }
+          }
+          if (errors.length) {
+            const failure = new AggregateError(errors, "Retained checkout work or session cleanup failed.");
+            console.error("Verification failure details: " + JSON.stringify(describeError(failure), null, 2));
+            throw failure;
+          }
+        },
+      });
     }
 
     await cartOperation(container, a.id, () => db.transaction((trx) => supersedeCart(trx, cartId)));
@@ -320,6 +344,14 @@ export default async function verifyCartFoundation(
     catch (error) { failures.push(new Error("M8-B cleanup failed: " + name + "; prefix " + prefix, { cause: error })); return false; }
   };
   for (const cookie of cookies) await cleanup("session", () => expectStatus(call("/auth/session", cookie, "DELETE"), 200));
+  if(retainFinancialFixture) {
+    if(failures.length) {
+      const failure = new AggregateError(failures,"Retained checkout fixture failed.");
+      console.error("Verification failure details: " + JSON.stringify(describeError(failure), null, 2));
+      throw failure;
+    }
+    return;
+  }
   const cartsRemoved = await cleanup("carts", async () => {
     const owned = customerIds.length ? await carts.listCarts({ customer_id: customerIds }, { take: null }) : [];
     if (owned.length) {

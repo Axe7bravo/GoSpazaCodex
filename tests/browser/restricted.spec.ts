@@ -144,7 +144,7 @@ for(const role of ["OWNER","MANAGER","PICKER"])test(role+" acknowledges physical
   const state=await compliance(page,role);state.returnState="RETURNING_TO_STORE";state.arrived=true;
   await page.goto("http://localhost:3001/merchant/returns");await page.getByRole("button",{name:"Open return for order 42"}).click();
   await page.getByRole("checkbox").check();await page.getByRole("button",{name:"Acknowledge physical receipt"}).click();
-  await expect(page.getByText("Physical custody acknowledged. Financial review remains pending.")).toBeVisible();
+  await expect(page.getByText("Physical custody acknowledged. See the order for financial status.")).toBeVisible();
   expect(state.writes).toEqual([{path:"/merchant/deliveries/delivery_fixture/return",body:{expected_revision:4}}]);
   await expect(page.getByRole("button",{name:"Acknowledge physical receipt"})).toHaveCount(0);
 });
@@ -161,7 +161,7 @@ test("merchant submits existing private evidence for its store only",async({page
 });
 for(const phase of ["RETURN_REQUIRED","RETURNING_TO_STORE","RETURNED_TO_STORE"] as const)test("customer "+phase+" has no coordinates, code or financial resolution claim",async({page})=>{
   const state=await compliance(page);state.phase=phase;state.returnState=phase;await page.goto("http://localhost:3000/orders/order_fixture");
-  await expect(page.getByText(/Financial review is pending/)).toBeVisible();
+  await expect(page.getByRole("region",{name:"Payment and adjustments"})).toBeVisible();
   const expected={
     RETURN_REQUIRED:{title:"Unable to complete restricted delivery",body:"The entire order must be returned to the store."},
     RETURNING_TO_STORE:{title:"Returning to store",body:"Your order is being returned to the store."},
@@ -169,7 +169,7 @@ for(const phase of ["RETURN_REQUIRED","RETURNING_TO_STORE","RETURNED_TO_STORE"] 
   }[phase];
   await expect(page.getByRole("region",{name:"Delivery status",exact:true})).toContainText(expected.title);
   await expect(page.getByText(expected.body,{exact:true})).toBeVisible();
-  await expect(page.getByText("Financial review is pending. A physical return does not confirm a refund, store credit or total adjustment.",{exact:true})).toBeVisible();
+  await expect(page.getByText("A physical return does not confirm a refund or credit. See Payment and adjustments for the current financial status.",{exact:true})).toBeVisible();
   await expect(page.getByLabel("Courier location")).toHaveCount(0);await expect(page.getByLabel("Handoff code",{exact:true})).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("-29.12345");await expect(page.locator("body")).not.toContainText("school_uniform");
 });

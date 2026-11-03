@@ -6,6 +6,7 @@ import { DiscoveryService } from "./discovery-service";
 import { checkoutAddress, checkoutSnapshot, checkoutRevision } from "../modules/marketplace/checkout-policy";
 import { minorPrice } from "../modules/marketplace/catalogue-policy";
 import type { CheckoutSnapshot } from "../modules/marketplace/checkout-policy";
+import { YOCO_MINIMUM_MINOR } from "../modules/yoco/validation";
 
 const unavailable = () => new MedusaError(MedusaError.Types.CONFLICT, "CHECKOUT_NATIVE_STATE");
 export function checkoutMoney(value: unknown): number {
@@ -38,6 +39,16 @@ export function nativeCheckoutItems(cart: CartDTO) {
   }));
 }
 
+export function nativeCreditSnapshot(cart:CartDTO):CheckoutSnapshot["store_credit"] {
+  const lines=cart.credit_lines ?? [];
+  if(!lines.length) return undefined;
+  const line=lines[0];
+  if(lines.length!==1 || !line || line.reference!=="store-credit" || !line.reference_id || !line.id) throw unavailable();
+  const amount=checkoutMoney(line.amount), net=checkoutMoney(cart.total);
+  if(!amount || !Number.isSafeInteger(amount+net) || net<YOCO_MINIMUM_MINOR) throw unavailable();
+  return {account_id:line.reference_id,line_id:line.id,amount_minor:amount,gross_minor:net+amount};
+}
+
 // Never refresh a live collection or its historical sessions. A proven closed
 // operation may be unlinked, retaining all historical native payment resources.
 export async function requireUnpaidCart(container: MedusaContainer, cartId: string): Promise<void> {
@@ -66,7 +77,7 @@ export async function refreshCheckoutCart(
   const cart = await carts.retrieveCart(cartId, {
     select: ["id", "customer_id", "currency_code", "completed_at", "total", "subtotal",
       "tax_total", "discount_total", "shipping_total"],
-    relations: ["items", "items.tax_lines", "items.adjustments", "shipping_methods",
+    relations: ["credit_lines", "items", "items.tax_lines", "items.adjustments", "shipping_methods",
       "shipping_methods.tax_lines", "shipping_methods.adjustments"],
   });
   if (cart.completed_at || cart.currency_code !== "zar" || !cart.items?.length
@@ -78,7 +89,7 @@ export async function assertNativeCheckoutSnapshot(container: MedusaContainer, s
   const native = await container.resolve<ICartModuleService>(Modules.CART).retrieveCart(snapshot.cart_id, {
     select: ["id", "customer_id", "currency_code", "completed_at", "total", "subtotal",
       "tax_total", "discount_total", "shipping_total"],
-    relations: ["items", "items.tax_lines", "items.adjustments", "shipping_methods",
+    relations: ["credit_lines", "items", "items.tax_lines", "items.adjustments", "shipping_methods",
       "shipping_methods.tax_lines", "shipping_methods.adjustments", "shipping_address"],
   });
   const method = native.shipping_methods?.[0];
@@ -86,6 +97,7 @@ export async function assertNativeCheckoutSnapshot(container: MedusaContainer, s
   if (native.completed_at || native.customer_id !== snapshot.customer_id || native.currency_code !== "zar"
     || native.shipping_methods?.length !== 1 || !method || !address) throw new MedusaError(MedusaError.Types.CONFLICT, "CHECKOUT_RECONFIRM");
   const current = checkoutSnapshot.parse({ ...snapshot,
+    store_credit: nativeCreditSnapshot(native),
     customer_id: native.customer_id, currency_code: native.currency_code,
     shipping_method_id: method.id, shipping_option_id: method.shipping_option_id,
     totals: nativeCheckoutTotals(native), items: nativeCheckoutItems(native),

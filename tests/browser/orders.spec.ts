@@ -277,7 +277,7 @@ for (const [status, heading] of [
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.getByText("Private staff reason", { exact: true })).toHaveCount(0);
     if (status === "REJECTED") {
-      await expect(page.getByText("This order will not be fulfilled. Payment resolution is still pending.", { exact: true })).toBeVisible();
+      await expect(page.getByText("This order will not be fulfilled. See payment and adjustments for its financial status.", { exact: true })).toBeVisible();
       await expect(page.getByText(/refunded|refund completed|credited|inventory|reconciliation/i)).toHaveCount(0);
     }
     await expect(page.getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);

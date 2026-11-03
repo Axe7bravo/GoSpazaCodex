@@ -26,6 +26,9 @@ importers:
       globals:
         specifier: ^16.0.0
         version: 16.5.0
+      next:
+        specifier: 16.3.8
+        version: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       tsx:
         specifier: ^4.20.0
         version: 4.23.15
@@ -90,6 +93,9 @@ importers:
       '@medusajs/framework':
         specifier: 2.18.0
         version: 2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5)
+      '@medusajs/loyalty-plugin':
+        specifier: 2.18.0
+        version: 2.18.0(ea1d48515fc3b46821955ecc99f04340)
       '@medusajs/medusa':
         specifier: 2.18.0
         version: 2.18.0(@medusajs/admin-sdk@2.18.0)(@medusajs/cli@2.18.0(@types/node@22.20.4))(@medusajs/dashboard@2.18.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(typescript@5.9.3))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5))(@medusajs/icons@2.18.0(react@18.3.1))(@medusajs/ui@4.2.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@swc/core@1.16.2(@swc/helpers@0.5.23))(@types/node@22.20.4)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(awilix@8.0.1)(picomatch@4.0.7)(posthog-node@5.53.0(rxjs@7.8.2))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -1646,6 +1652,41 @@ packages:
     resolution: {integrity: sha512-uoJYy5RhQbFX+RPMmKTaL0M2H+Db34fjXTl6kLGnxEzGaqa3+ZaQTtJ/2gmc3xibdp5eFTmsFV5ecHwlNe4Itw==}
     peerDependencies:
       '@medusajs/framework': 2.18.0
+
+  '@medusajs/loyalty-plugin@2.18.0':
+    resolution: {integrity: sha512-0MFyXHHAcYrtua2+vkF8UTOzjPFKL9d1lzEQDnjdj8Evz2FeLFybxQDr/iHN8eVDof8W6QlwXb0mKh4PM1MUMg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@medusajs/admin-sdk': 2.18.0
+      '@medusajs/cli': 2.18.0
+      '@medusajs/dashboard': 2.18.0
+      '@medusajs/framework': 2.18.0
+      '@medusajs/icons': 2.18.0
+      '@medusajs/medusa': 2.18.0
+      '@medusajs/test-utils': 2.18.0
+      '@medusajs/ui': 4.2.0
+      react: ^18.3.1
+      react-dom: ^18.3.1
+      react-router-dom: 6.30.4
+    peerDependenciesMeta:
+      '@medusajs/admin-sdk':
+        optional: true
+      '@medusajs/cli':
+        optional: true
+      '@medusajs/dashboard':
+        optional: true
+      '@medusajs/icons':
+        optional: true
+      '@medusajs/test-utils':
+        optional: true
+      '@medusajs/ui':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      react-router-dom:
+        optional: true
 
   '@medusajs/medusa@2.18.0':
     resolution: {integrity: sha512-4sDiLOiZ8gj4s8gNyfKYuNOQxSGraY52XN0rKSPy9BnlvieXi22lkMLYq8Umb5HV696BIvQX95Nb4qdJVGhArQ==}
@@ -8530,6 +8571,20 @@ snapshots:
   '@medusajs/locking@2.18.0(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5))':
     dependencies:
       '@medusajs/framework': 2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5)
+
+  '@medusajs/loyalty-plugin@2.18.0(ea1d48515fc3b46821955ecc99f04340)':
+    dependencies:
+      '@medusajs/framework': 2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5)
+      '@medusajs/medusa': 2.18.0(@medusajs/admin-sdk@2.18.0)(@medusajs/cli@2.18.0(@types/node@22.20.4))(@medusajs/dashboard@2.18.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(typescript@5.9.3))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5))(@medusajs/icons@2.18.0(react@18.3.1))(@medusajs/ui@4.2.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@swc/core@1.16.2(@swc/helpers@0.5.23))(@types/node@22.20.4)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(awilix@8.0.1)(picomatch@4.0.7)(posthog-node@5.53.0(rxjs@7.8.2))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+    optionalDependencies:
+      '@medusajs/admin-sdk': 2.18.0
+      '@medusajs/cli': 2.18.0(@types/node@22.20.4)
+      '@medusajs/dashboard': 2.18.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(typescript@5.9.3)
+      '@medusajs/icons': 2.18.0(react@18.3.1)
+      '@medusajs/ui': 4.2.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      react-router-dom: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   '@medusajs/medusa@2.18.0(@medusajs/admin-sdk@2.18.0)(@medusajs/cli@2.18.0(@types/node@22.20.4))(@medusajs/dashboard@2.18.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(typescript@5.9.3))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@22.20.4))(@types/node@22.20.4)(ioredis@5.11.1)(vite@6.4.3(@types/node@22.20.4)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.5))(@medusajs/icons@2.18.0(react@18.3.1))(@medusajs/ui@4.2.0(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@swc/core@1.16.2(@swc/helpers@0.5.23))(@types/node@22.20.4)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(awilix@8.0.1)(picomatch@4.0.7)(posthog-node@5.53.0(rxjs@7.8.2))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)':
     dependencies:

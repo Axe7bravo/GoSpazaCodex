@@ -12,8 +12,11 @@ import { DeliveryTracking } from "../lib/delivery-tracking";
 import { databaseTime } from "../modules/marketplace/delivery-reservation-repository";
 import type { PurchaserEligibilityProvider, PurchaserEvidence } from "../modules/marketplace/restricted-policy";
 import type { RecipientInput } from "../modules/marketplace/recipient-policy";
+import type { OrderOperationsVerificationFixture } from "./verify-order-operations";
 
-export default async function verifyRecipient(args:ExecArgs) {
+import { retainingBrowserFixture } from "./fixtures/financial-browser";
+
+export default async function verifyRecipient(args:ExecArgs, afterCustody?: (orders:OrderOperationsVerificationFixture,deliveryId:string,orderId:string,additionalReturns:{deliveryId:string;orderId:string}[])=>Promise<void>) {
   if(!["development","test"].includes(process.env.APP_ENV??"")) throw new Error("Recipient fixtures require a local verification environment.");
   if(process.env.HANDOFF_WORKER_ENABLED==="true") throw new Error("Disable HANDOFF_WORKER_ENABLED in backend and verifier.");
   await verifyPickup(args,async({f,assigned})=>{
@@ -205,6 +208,18 @@ export default async function verifyRecipient(args:ExecArgs) {
       assert.deepEqual(await financial(),financialBefore);
       assert.deepEqual(await nativeReturns(),returnsBefore);
       await assert.rejects(handoff.verify(a.who.identity,a.delivery.id,{expected_revision:state.revision,code:code.code}));
+      const additionalReturns:{deliveryId:string;orderId:string}[]=[];
+      if(retainingBrowserFixture()) {
+        for(const label of ["non-sellable","stock-attention","restock"]) {
+          const extra=await trip("browser-"+label);
+          const arrived=await handoff.read(extra.who.identity,extra.delivery.id);
+          let state=await recipient.verify(extra.who.identity,extra.delivery.id,{...observation(arrived.revision),school_uniform_observed:true});
+          state=await recipient.returnAction(extra.who.identity,extra.delivery.id,"start",{expected_revision:state.revision});
+          state=await recipient.returnAction(extra.who.identity,extra.delivery.id,"arrive",{expected_revision:state.revision});
+          await recipient.merchant(f.orders.manager.identity,extra.delivery.id,{expected_revision:state.revision});
+          additionalReturns.push({deliveryId:extra.delivery.id,orderId:extra.order.orderId});
+        }
+      }
       const b=await trip("success"),bview=await handoff.read(b.who.identity,b.delivery.id),binput=observation(bview.revision);
       assert.equal((await recipient.verify(b.who.identity,b.delivery.id,binput)).compliance,"SATISFIED");
       await pickup.locked(b.delivery.id,b.who.identity,async s=>{
@@ -256,7 +271,9 @@ export default async function verifyRecipient(args:ExecArgs) {
       const events=await db("restricted_event").whereIn("target_id",rows.map(r=>r.id));
       for(const value of [...rows,...events])for(const prohibited of ["1990-01-01","date_of_birth","document_number","latitude","longitude"])
         assert.equal(JSON.stringify(value).includes(prohibited),false);
+      if(afterCustody) await afterCustody(f.orders,a.delivery.id,a.order.orderId,additionalReturns);
     } finally {
+      if(!retainingBrowserFixture()) {
       const orders=customers.length?await native.listOrders({customer_id:customers},{take:null}):[];
       const orderIds=orders.map(o=>o.id),deliveries=await db<{id:string}>("delivery_operation").whereIn("medusa_order_id",orderIds);
       await db.transaction(async trx=>{
@@ -267,6 +284,7 @@ export default async function verifyRecipient(args:ExecArgs) {
       if(evidenceIds.length)await db("purchaser_eligibility").whereIn("id",evidenceIds).delete();
       await review(false);
       if(createdFileKey)await container.resolve<IFileModuleService>(Modules.FILE).deleteFiles(createdFileKey);
+      }
       for(const [key,value]of Object.entries(prior)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
     }
   });

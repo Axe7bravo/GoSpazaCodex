@@ -88,6 +88,8 @@ function paymentEvent(body: { id: string; type: string; payload?: unknown }): Ve
 export const verifiedRefund = z.object({
   id: identifier, type: z.enum(["refund.succeeded", "refund.failed"]),
   checkoutId: identifier, amount: minorAmount, currency: z.literal("ZAR"), mode: z.enum(["test", "live"]),
+  refundId: identifier.optional(), paymentId: identifier.optional(),
+  refundOperationId: identifier.optional(), refundAttemptId: identifier.optional(),
 }).strict();
 export type VerifiedRefundEvent = z.infer<typeof verifiedRefund>;
 export type VerifiedYocoEvent = VerifiedPaymentEvent | VerifiedRefundEvent;
@@ -100,14 +102,18 @@ export function verifyYocoInboxEvent(input: YocoWebhookPayload, secret: string, 
   if (!["refund.succeeded", "refund.failed"].includes(body.type)) return null;
   const parsed = z.object({
     id: identifier, type: z.enum(["refund.succeeded", "refund.failed"]),
-    payload: z.object({ type: z.literal("refund"), status: z.enum(["succeeded", "failed"]),
+    payload: z.object({ id: identifier.optional(), paymentId: identifier.optional(), type: z.literal("refund"), status: z.enum(["succeeded", "failed"]),
       amount: minorAmount, currency: z.literal("ZAR"), mode: z.enum(["test", "live"]),
-      metadata: z.object({ checkoutId: identifier }),
+      metadata: z.object({ checkoutId: identifier, gospazaRefundOperationId: identifier.optional(), gospazaRefundAttemptId: identifier.optional() }),
     }),
   }).safeParse(body);
   if (!parsed.success || parsed.data.type !== "refund." + parsed.data.payload.status) {
     throw new YocoProviderError("YOCO_INVALID_WEBHOOK");
   }
   return { id: parsed.data.id, type: parsed.data.type, checkoutId: parsed.data.payload.metadata.checkoutId,
+    ...(parsed.data.payload.id ? { refundId: parsed.data.payload.id } : {}),
+    ...(parsed.data.payload.paymentId ? { paymentId: parsed.data.payload.paymentId } : {}),
+    ...(parsed.data.payload.metadata.gospazaRefundOperationId ? { refundOperationId: parsed.data.payload.metadata.gospazaRefundOperationId } : {}),
+    ...(parsed.data.payload.metadata.gospazaRefundAttemptId ? { refundAttemptId: parsed.data.payload.metadata.gospazaRefundAttemptId } : {}),
     amount: parsed.data.payload.amount, currency: parsed.data.payload.currency, mode: parsed.data.payload.mode };
 }

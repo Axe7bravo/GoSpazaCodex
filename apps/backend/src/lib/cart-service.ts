@@ -10,7 +10,7 @@ import type { CartDTO, ICartModuleService, ICustomerModuleService, IProductModul
   IRegionModuleService, IStoreModuleService, MedusaContainer } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { BigNumber, ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
-import { cartOperation } from "./cart-lock";
+import { cartOperation, initializeCartOperation } from "./cart-lock";
 import { commerceContext, commerceLock } from "./commerce";
 import { DiscoveryService } from "./discovery-service";
 import type { DiscoveryInput } from "./discovery-service";
@@ -41,6 +41,7 @@ export async function cartRegion(container: MedusaContainer) {
   assertCartRegion(region);
   return region;
 }
+
 
 export class CartFoundationService {
   private db: Knex;
@@ -83,13 +84,13 @@ export class CartFoundationService {
   // lock as native cart mutations; callers must not acquire that lock again.
   async withCurrent<T>(hint: string | undefined, work: (current: {
     cart: CartDTO; context: CartContext; valid: boolean;
-  }) => Promise<T>): Promise<T> {
+  }) => Promise<T>, admission?: "pay"): Promise<T> {
     return cartOperation(this.container, this.customerId, async () => {
       const current = hint ? await this.requireCurrent(hint) : await this.current();
       if (!current) throw unavailable();
       const restored = await this.restoration(current.cart, current.context);
       return work({ ...current, valid: restored.state === "current" });
-    });
+    }, admission);
   }
 
   async restore(hint?: string): Promise<CartFoundation> {
@@ -236,21 +237,23 @@ export class CartFoundationService {
   async ensureFirstCart(variantId: string, quantity: number, location: DiscoveryInput): Promise<string> {
     const input = addCartInput.safeParse({ variant_id: variantId, quantity, location });
     if (!input.success) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Invalid cart input.");
-    return cartOperation(this.container, this.customerId, async () => {
+    const initialize = async (allowCreate: boolean) => {
       const target = await this.target(variantId, input.data.location);
       return this.restrictedMutation(target, variantId, async () => {
-      const current = await this.current();
-      if (current) {
-        this.assertBinding(current.context, target);
-        if ((await this.restoration(current.cart, current.context)).state !== "current") throw inconsistent();
-        return current.cart.id;
-      }
-      const creation = await this.createInput(target, variantId, quantity);
-      this.mutationStarted = true;
-      const { result } = await createMarketplaceCartWorkflow(this.container).run({ input: creation });
-      return result;
+        const current = await this.current();
+        if (current) {
+          this.assertBinding(current.context, target);
+          if ((await this.restoration(current.cart, current.context)).state !== "current") throw inconsistent();
+          return current.cart.id;
+        }
+        if (!allowCreate) throw inconsistent();
+        const creation = await this.createInput(target, variantId, quantity);
+        this.mutationStarted = true;
+        const { result } = await createMarketplaceCartWorkflow(this.container).run({ input: creation });
+        return result;
       });
-    });
+    };
+    return initializeCartOperation(this.container, this.customerId, () => initialize(true), () => initialize(false));
   }
 
   async add(value: unknown): Promise<string> {
@@ -277,7 +280,7 @@ export class CartFoundationService {
       });
       return current.cart.id;
       });
-    });
+    }, "cart-mutation");
   }
 
   async updateItem(lineId: string, value: unknown): Promise<string> {
@@ -361,6 +364,6 @@ export class CartFoundationService {
         oldCartId: current.cart.id,
       });
       });
-    });
+    }, "cart-mutation");
   }
 }

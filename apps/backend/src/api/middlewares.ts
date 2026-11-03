@@ -13,6 +13,12 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/admin\/returns(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
+    { matcher: /^\/merchant\/deliveries\/[^/]+\/dispositions$/i, bodyParser: { sizeLimit: "4kb" } },
+    // Native financial mutation routes cannot bypass adjustment eligibility,
+    // explicit execution capability, or C1's one-settlement reservation.
+    { matcher: /^\/admin\/payments\/[^/]+\/refund\/?$/i, method: "POST", middlewares: [authOrigin, requireActor("user"), blockNativePayments] },
+    { matcher: /^\/admin\/gospaza\/(?:financial-adjustments|orders\/[^/]+\/(?:goodwill|financial-resolution))(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: "/merchant/restricted-commerce/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/driver\/deliveries(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/merchant\/deliveries\/[^/]+\/return$/i, bodyParser: { sizeLimit: "8kb" } },

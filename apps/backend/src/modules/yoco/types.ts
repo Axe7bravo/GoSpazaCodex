@@ -83,6 +83,9 @@ export interface YocoOperation {
  * evidence may populate payment or advance a pending refund to succeeded.
  */
 export abstract class YocoOperationStore {
+  // C1's native accounting callback must prove a pre-designated, externally
+  // succeeded refund. Default denial keeps other adapters and M10 unchanged.
+  async recordApprovedRefund(_operationId: string, _nativeRefundId: string, _amountMinor: number): Promise<boolean> { return false; }
   abstract read(operationId: string): Promise<YocoOperation | null>;
   abstract associateSession(operationId: string, sessionId: string, token: string | undefined): Promise<void>;
   abstract claimAuthorization(operationId: string, sessionId: string): Promise<boolean>;

@@ -101,7 +101,7 @@ export default function ShortagePanel({ order }: { order: CustomerOrder }) {
           <div><dt>Unavailable and unresolved</dt><dd>{item.unresolved_quantity}</dd></div>
           <div><dt>Omitted</dt><dd>{item.omitted_quantity}</dd></div></dl>
         {item.status === "RESOLVED_OMITTED" ? <>
-          <p>This quantity will not be supplied. Any payment adjustment has not yet been processed.</p>
+          <p>This quantity will not be supplied. See Payment and adjustments for any financial outcome.</p>
           {item.preference === "NO_SUBSTITUTION" && <p>Your earlier order preference was used to leave this quantity out.</p>}
         </> : <>
           <p>These original items are unavailable. Picking can continue while you decide.</p>

@@ -23,6 +23,7 @@ const cents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const checkoutSnapshot = z.object({
   // Optional only to read historical pre-M17 receipts; new prepare/Pay require it.
   restricted_commerce: restrictedSnapshot.optional(),
+  store_credit: z.object({ account_id:checkoutId, line_id:checkoutId, amount_minor:cents.positive(), gross_minor:cents.positive() }).strict().optional(),
   customer_id: checkoutId,
   cart_id: checkoutId,
   cart_context_id: checkoutId,

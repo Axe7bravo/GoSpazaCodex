@@ -7,6 +7,7 @@
     "./tokens.css": "./src/tokens.css",
     "./auth": "./src/auth.tsx",
     "./orders": "./src/orders.tsx",
+    "./financial": "./src/financial.tsx",
     "./driver-resource": "./src/driver-resource.ts",
     "./drivers": "./src/drivers.tsx",
     "./dispatch": "./src/dispatch.tsx",

@@ -39,19 +39,28 @@
     "test:pickup": "medusa exec ./src/scripts/verify-pickup.ts",
     "test:handoff": "medusa exec ./src/scripts/verify-handoff.ts",
     "test:restricted-commerce": "medusa exec ./src/scripts/verify-restricted-commerce.ts",
-    "test:recipient": "medusa exec ./src/scripts/verify-recipient.ts"
+    "test:recipient": "medusa exec ./src/scripts/verify-recipient.ts",
+    "test:financial-adjustments": "medusa exec ./src/scripts/verify-financial-adjustments.ts",
+    "test:store-credit-adapter": "medusa exec ./src/scripts/verify-store-credit-adapter.ts",
+    "test:refund-execution": "medusa exec ./src/scripts/verify-refund-execution.ts",
+    "test:credit-settlement": "medusa exec ./src/scripts/verify-credit-settlement.ts",
+    "test:credit-checkout": "medusa exec ./src/scripts/verify-credit-checkout.ts",
+    "fixture:financial-browser": "medusa exec ./src/scripts/prepare-financial-browser.ts",
+    "test:credit-races": "medusa exec ./src/scripts/verify-credit-races.ts",
+    "test:returned-inventory": "medusa exec ./src/scripts/verify-returned-inventory.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1139.0",
+    "@aws-sdk/s3-request-presigner": "3.1139.0",
     "@gospaza/config": "workspace:*",
     "@gospaza/contracts": "workspace:*",
     "@medusajs/admin-sdk": "2.18.0",
     "@medusajs/cli": "2.18.0",
     "@medusajs/framework": "2.18.0",
+    "@medusajs/loyalty-plugin": "2.18.0",
     "@medusajs/medusa": "2.18.0",
     "ioredis": "^5.8.0",
-    "pg": "^8.16.0",
-    "@aws-sdk/client-s3": "3.1139.0",
-    "@aws-sdk/s3-request-presigner": "3.1139.0"
+    "pg": "^8.16.0"
   },
   "devDependencies": {
     "@gospaza/test-utils": "workspace:*",

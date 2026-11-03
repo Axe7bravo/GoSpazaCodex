@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import type { ExecArgs, IPaymentModuleService } from "@medusajs/framework/types";
+import type { ExecArgs, ICartModuleService, IPaymentModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import type { Link } from "@medusajs/framework/modules-sdk";
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
 import { z } from "@medusajs/framework/zod";
 import { withCheckoutVerification } from "./verify-checkout-foundation";
 import type { CheckoutVerificationCustomer } from "./verify-checkout-foundation";
@@ -27,6 +27,30 @@ const confirmation = z.object({
   quote: z.object({ checkout_revision: z.string() }),
 });
 const quote = z.object({ quote: z.object({ checkout_revision: z.string() }) });
+
+function readyAttempt(attemptId: string, outcomes: PromiseSettledResult<Awaited<ReturnType<PaymentInitiationService["initiate"]>>>[]) {
+  const ready = [];
+  for (const result of outcomes) {
+    if (result.status === "rejected") {
+      const error: unknown = result.reason;
+      if (!error || typeof error !== "object" || !MedusaError.isMedusaError(error)
+        || error.type !== MedusaError.Types.CONFLICT || error.code !== "CHECKOUT_ALREADY_PROCESSING") throw result.reason;
+    } else {
+      assert.equal(result.value.state, "ready");
+      assert.equal(result.value.attempt_id, attemptId);
+      ready.push(result.value);
+    }
+  }
+  const winner = ready[0];
+  assert.ok(winner, "at least one Pay caller must return the ready attempt");
+  for (const result of ready) assert.deepEqual(result, winner);
+  return winner;
+}
+
+async function payCase<T>(scenario: string, pending: Promise<T>): Promise<T> {
+  try { return await pending; }
+  catch (cause) { throw new Error("M10-D Pay scenario failed: " + scenario, { cause }); }
+}
 
 export default async function verifyPaymentInitiation(args: ExecArgs) {
   const configuration = yocoConfiguration(process.env);
@@ -109,7 +133,16 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
           expect(await http(a.cookie, "POST", nativePath, { cart_id: a.cartId, provider_id: YOCO_PROVIDER_ID }), 404);
         }
 
-        const [firstPay, secondPay, mutation, switchStore] = await Promise.all([
+        const carts = container.resolve<ICartModuleService>(Modules.CART);
+        const contents = async () => {
+          const cart = await carts.retrieveCart(a.cartId, { relations: ["items"] });
+          assert.ok(cart.items?.length);
+          return cart.items.map(item => ({ id: item.id, variant: item.variant_id, quantity: Number(item.quantity) }))
+            .sort((left,right) => left.id.localeCompare(right.id));
+        };
+        const originalItems = await contents();
+        const postsBeforePay = posts.length;
+        const [firstPay, secondPay, mutation, switchStore] = await Promise.allSettled([
           service().initiate(input), service().initiate(input),
           http(a.cookie, "POST", "/store/gospaza/cart/items", {
             cart_id: a.cartId, variant_id: first.variantId, quantity: 1, location: fixture.location,
@@ -118,14 +151,23 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
             cart_id: a.cartId, variant_id: second.variantId, quantity: 1, location: fixture.location, confirm: true,
           }),
         ]);
-        expect(mutation, 409);
-        expect(switchStore, 409);
+        const mutations = [["add-item", mutation], ["switch-store", switchStore]] as const;
+        const winner = readyAttempt(input.attempt_id, [firstPay, secondPay]);
+        for (const [operation, result] of mutations) {
+          try {
+            if (result.status === "rejected") throw result.reason;
+            z.object({ code: z.enum(["CHECKOUT_FROZEN", "CART_STATE_CONFLICT"]) }).parse(expect(result.value, 409));
+          } catch (cause) {
+            throw new Error("M10-D payment-double mutation failed: " + operation, { cause });
+          }
+        }
+        assert.deepEqual(await contents(), originalItems);
         const bound = await db<{ medusa_cart_id: string; merchant_store_id: string }>("cart_marketplace_context")
           .where({ medusa_cart_id: a.cartId }).whereNull("superseded_at").first();
         assert.equal(bound?.merchant_store_id, first.store.id, "Pay/switch race retains the confirmed store/cart");
-        const results = [firstPay, secondPay];
-        assert.equal(results[0]?.state, "ready");
-        assert.deepEqual(results[0], results[1]);
+        assert.equal(posts.length - postsBeforePay, 1);
+        const attempts = await db<Attempt>("checkout_attempt").where({ medusa_cart_id: a.cartId }).select("id");
+        assert.deepEqual(attempts.map(attempt => attempt.id), [input.attempt_id]);
         const op = await row(input.attempt_id);
         assert.equal(posts.filter((post) => post.key === op.idempotency_key).length, 1);
         assert.equal((await db("provider_operation").where({ checkout_attempt_id: input.attempt_id })).length, 1);
@@ -137,11 +179,12 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         assert.ok(new Date(frozen.payment_deadline).getTime() <= Date.now() + paymentDeadlineMinutes(process.env) * 60000);
         const restored = z.object({ attempt: z.object({ state: z.literal("PAYMENT_PENDING"), payment_deadline: z.string() }) })
           .parse(expect(await http(a.cookie, "GET", path + "?cart_id=" + a.cartId)));
-        assert.equal(restored.attempt.payment_deadline, results[0]?.payment_deadline);
+        assert.equal(restored.attempt.payment_deadline, winner.payment_deadline);
         expect(await http(a.cookie, "POST", "/store/payment-collections/" + op.payment_collection_id + "/payment-sessions",
           { provider_id: YOCO_PROVIDER_ID, data: { operation_id: op.id } }), 404);
-        const replay = await service().initiate(input, true);
-        assert.deepEqual(replay, results[0], "restoration/retry cannot renew payment expiry");
+        const replay = await payCase("sequential recovery replay", service().initiate(input, true));
+        assert.deepEqual(replay, winner, "restoration/retry cannot renew payment expiry");
+        assert.equal(posts.length - postsBeforePay, 1, "sequential replay must not send another checkout request");
         await assert.rejects(() => db("provider_operation").where({ id: op.id }).update({ idempotency_key: "different" }));
         await assert.rejects(() => db("provider_operation").where({ id: op.id }).update({ request_json: "{}" }));
         await assert.rejects(() => db("checkout_attempt").where({ id: frozen.id }).update({ payment_deadline: db.raw("clock_timestamp() + interval '1 day'") }));
@@ -163,13 +206,13 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
             - await occupied(trx, hold.delivery_slot_id, now, hold.cart_context_id);
         });
         assert.equal(count, 1, "this payment commitment consumes capacity past HELD expiry");
-        assert.equal((await service().initiate(input)).state, "ready");
+        assert.equal((await payCase("sequential Pay re-entry", service().initiate(input))).state, "ready");
         const delivery = new DeliveryReservationService(container, a.id);
         await assert.rejects(() => delivery.release({
           cart_id: a.cartId, expected_revision: a.hold.revision + 1,
         }), /CHECKOUT_FROZEN/);
         const pendingRestore = await delivery.restore({ cart_id: a.cartId });
-        assert.equal(pendingRestore.selection?.expires_at, results[0]?.payment_deadline);
+        assert.equal(pendingRestore.selection?.expires_at, winner.payment_deadline);
         expect(await http(a.cookie, "POST", "/store/gospaza/cart/switch-store", {
           cart_id: a.cartId, variant_id: second.variantId, quantity: 1, location: fixture.location, confirm: true,
         }), 409);
@@ -179,7 +222,9 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         const lostInput = await confirmed(lost);
         const lostService = () => new PaymentInitiationService(container, lost.id);
         loseNextResponse = true;
-        assert.equal((await lostService().initiate(lostInput)).state, "uncertain");
+        const lostResult = await payCase("lost response initial Pay", lostService().initiate(lostInput));
+        assert.equal(lostResult.state, "uncertain");
+        assert.ok(lostResult.payment_deadline);
         const uncertain = await row(lostInput.attempt_id);
         assert.equal(uncertain.state, "uncertain");
         assert.ok(uncertain.payment_collection_id);
@@ -189,8 +234,26 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         const originalSession = oldAssociations[0]?.native_session_id;
         assert.ok(originalSession);
         const externalBefore = external.size;
-        const recovered = await Promise.all([lostService().initiate(lostInput, true), lostService().initiate(lostInput, true)]);
-        assert.ok(recovered.every((result) => result.state === "ready"));
+        const postsBeforeRecovery = posts.length;
+        const receipt = external.get(uncertain.idempotency_key)?.receipt;
+        assert.ok(receipt);
+        const outcomes = await Promise.allSettled([
+          lostService().initiate(lostInput, true), lostService().initiate(lostInput, true),
+        ]);
+        const recovered = readyAttempt(lostInput.attempt_id, outcomes);
+        assert.equal(recovered.payment_deadline, lostResult.payment_deadline);
+        assert.equal(recovered.redirect_url, receipt.redirectUrl);
+        // A later caller must read the ready operation even if one racing caller lost admission.
+        const replayed = await payCase("sequential recovered Pay", lostService().initiate(lostInput, true));
+        assert.deepEqual(replayed, recovered);
+        assert.equal(posts.length, postsBeforeRecovery + 1, "one recovery POST across the pair and later replay");
+        const attemptsAfterRecovery = await db<Attempt>("checkout_attempt").where({ medusa_cart_id: lost.cartId }).select("id");
+        assert.deepEqual(attemptsAfterRecovery.map(attempt => attempt.id), [lostInput.attempt_id]);
+        const operationsAfterRecovery = await db<OperationRow>("provider_operation").where({checkout_attempt_id: lostInput.attempt_id});
+        assert.equal(operationsAfterRecovery.length, 1);
+        assert.equal(operationsAfterRecovery[0]?.id, uncertain.id);
+        assert.equal(operationsAfterRecovery[0]?.payment_collection_id, uncertain.payment_collection_id);
+        assert.equal((await payments.listPaymentSessions({payment_collection_id: uncertain.payment_collection_id})).length, 1);
         assert.equal(external.size, externalBefore, "recovery cannot create a second payable checkout");
         const sent = posts.filter((post) => post.key === uncertain.idempotency_key);
         assert.equal(sent.length, 2);
@@ -261,7 +324,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         const { id: zoneId, ...tariff } = zone;
         await locationService.save({ ...tariff, delivery_fee_minor: tariff.delivery_fee_minor + 100 }, zoneId, prefix);
         try {
-          assert.equal((await new PaymentInitiationService(container, tariffCustomer.id).initiate(tariffInput)).state, "ready");
+          assert.equal((await payCase("tariff case", new PaymentInitiationService(container, tariffCustomer.id).initiate(tariffInput))).state, "ready");
           const tariffOperation = await row(tariffInput.attempt_id);
           const tariffAttempt = await db<Attempt>("checkout_attempt").where({ id: tariffInput.attempt_id }).first();
           assert.ok(tariffAttempt);
@@ -283,7 +346,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         const unlock = new Promise<void>((resolve) => { releaseLock = resolve; });
         const holder = cartOperation(container, waiting.id, async () => { signalLocked(); await unlock; });
         await Promise.race([locked, holder.then(() => { throw new Error("Lock gate ended unexpectedly."); })]);
-        const waitingPay = new PaymentInitiationService(container, waiting.id).initiate(waitingInput);
+        const waitingPay = payCase("expiry while waiting for cart lock", new PaymentInitiationService(container, waiting.id).initiate(waitingInput));
         const waitingOutcome = Promise.allSettled([waitingPay]);
         try {
           await db.transaction(async (trx) => {
@@ -333,7 +396,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         assert.equal((await payments.listPaymentCollections({}, { take: null }))
           .filter((collection) => collection.metadata?.gospaza_operation_id === old.id).length, 1);
         const priorPosts = posts.length;
-        const expiredResult = await new PaymentInitiationService(container, expired.id).initiate(expiredInput, true);
+        const expiredResult = await payCase("expired attempt recovery", new PaymentInitiationService(container, expired.id).initiate(expiredInput, true));
         assert.equal(expiredResult.state, "expired");
         assert.equal(expiredResult.redirect_url, null);
         assert.equal(posts.length, priorPosts);
@@ -377,7 +440,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
           })));
         const later = await confirmed({ ...expired, input: { ...expired.input, expected_reservation_revision: replacementHold.revision } });
         assert.equal(await linkedCollection(container, expired.cartId), null, "preparation detaches historical payment resources");
-        const laterResult = await new PaymentInitiationService(container, expired.id).initiate(later);
+        const laterResult = await payCase("replacement checkout", new PaymentInitiationService(container, expired.id).initiate(later));
         assert.equal(laterResult.state, "ready");
         const laterOp = await row(later.attempt_id);
         assert.notEqual(laterOp.id, old.id);
@@ -386,7 +449,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         assert.equal((await operations.row(old.id)).payment_collection_id, oldCollection.id);
         assert.equal((await payments.retrievePaymentSession(historicalSession.id)).payment_collection_id, oldCollection.id);
         assert.ok((await operations.read(old.id))?.sessionIds.includes(historicalSession.id));
-        assert.equal((await new PaymentInitiationService(container, expired.id).initiate(expiredInput, true)).state, "expired");
+        assert.equal((await payCase("historical attempt re-entry", new PaymentInitiationService(container, expired.id).initiate(expiredInput, true))).state, "expired");
         assert.equal(await linkedCollection(container, expired.cartId), laterOp.payment_collection_id);
       } catch (error) { failures.push(error); }
 
@@ -414,7 +477,7 @@ export default async function verifyPaymentInitiation(args: ExecArgs) {
         });
       } catch (error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, "M10-D payment initiation verification failed.");
-    });
+    }, false, 45_000);
   } finally {
     globalThis.fetch = originalFetch;
   }

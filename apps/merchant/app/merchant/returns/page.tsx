@@ -3,9 +3,11 @@ import { useCallback, useState } from "react";
 import { createRecipientClient } from "@gospaza/api-client";
 import { useDriverResource } from "@gospaza/ui/driver-resource";
 import { useMerchant } from "../shell";
+import Disposition from "./disposition";
 const client=createRecipientClient(process.env.NEXT_PUBLIC_API_URL!);
 const denied=()=>window.location.replace("/application");
 function Receipt({id}:{id:string}) {
+  const {tenant}=useMerchant();
   const load=useCallback(()=>client.merchantReturn(id),[id]);
   const resource=useDriverResource(load,denied), value=resource.data;
   return <section aria-label="Physical return receipt"><h2>Physical return receipt</h2>
@@ -19,7 +21,8 @@ function Receipt({id}:{id:string}) {
         <label><input type="checkbox" required disabled={resource.busy} />I have physically received the entire recorded return at this store</label>
         <button disabled={resource.busy}>Acknowledge physical receipt</button></form>}
       {!value.awaiting_store_receipt && value.return_state!=="RETURNED_TO_STORE" && <p>Awaiting driver arrival at the original store.</p>}
-      {value.return_state==="RETURNED_TO_STORE" && <p>Physical custody acknowledged. Financial review remains pending.</p>}
+      {value.return_state==="RETURNED_TO_STORE" && <><p>Physical custody acknowledged. See the order for financial status.</p>
+        {tenant.membership.capabilities.includes("MERCHANT_INVENTORY_MANAGE") && <Disposition id={id}/>}</>}
     </>}
   </section>;
 }

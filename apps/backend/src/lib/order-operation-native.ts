@@ -20,7 +20,7 @@ export async function readOperationalOrder(container: MedusaContainer, handoff: 
     order = await container.resolve<IOrderModuleService>(Modules.ORDER).retrieveOrder(handoff.order_id, {
       select: ["id", "display_id", "created_at", "customer_id", "sales_channel_id", "status", "currency_code",
         "total", "subtotal", "tax_total", "discount_total", "shipping_total"],
-      relations: ["items", "items.tax_lines", "items.adjustments", "shipping_methods",
+      relations: ["credit_lines", "items", "items.tax_lines", "items.adjustments", "shipping_methods",
         "shipping_methods.tax_lines", "shipping_methods.adjustments", "shipping_address"],
     });
     const cart = await container.resolve<ICartModuleService>(Modules.CART).retrieveCart(handoff.cart_id);

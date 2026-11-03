@@ -7,6 +7,7 @@ import { OrderError } from "@gospaza/api-client";
 import { orderClient, orderError } from "../../order-client";
 import { useMerchant } from "../shell";
 import { OrderDispatch } from "@gospaza/ui/dispatch";
+import MerchantFinancialResolution from "./financial-resolution";
 
 function Detail({ id, mayDecide }: { id: string; mayDecide: boolean }) {
   const [order, setOrder] = useState<MerchantOrder | null>(null);
@@ -90,6 +91,7 @@ function Detail({ id, mayDecide }: { id: string; mayDecide: boolean }) {
         {order.rejection_reason && <p>Rejection reason: {order.rejection_reason}</p>}
       </>}
       <OrderSummary order={order} />
+      <MerchantFinancialResolution key={order.id} id={order.id}/>
       {order.operational_status === "ACCEPTED" && <OrderDispatch id={order.id} actor="merchant" baseUrl={process.env.NEXT_PUBLIC_API_URL!} />}
       {mayDecide && order.operational_status === "PENDING_ACCEPTANCE" && <section aria-label="Order decision">
         {!confirmation ? <div className="order-actions">
@@ -119,5 +121,5 @@ function Detail({ id, mayDecide }: { id: string; mayDecide: boolean }) {
 export default function OrderDetail({ id }: { id: string }) {
   const { tenant } = useMerchant();
   if (!tenant.membership.capabilities.includes("MERCHANT_ORDER_VIEW")) return <h1>Order access unavailable</h1>;
-  return <Detail key={tenant.membership.id} id={id} mayDecide={tenant.membership.capabilities.includes("MERCHANT_ORDER_DECIDE")} />;
+  return <Detail key={tenant.membership.id+":"+id} id={id} mayDecide={tenant.membership.capabilities.includes("MERCHANT_ORDER_DECIDE")} />;
 }

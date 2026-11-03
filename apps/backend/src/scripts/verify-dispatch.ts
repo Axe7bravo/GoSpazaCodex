@@ -8,6 +8,7 @@ import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import verifyOrderOperations from "./verify-order-operations";
 import type { OrderOperationsVerificationFixture } from "./verify-order-operations";
 import { cleanupShortages } from "./shortage-verification-cleanup";
+import { retainingBrowserFixture } from "./fixtures/financial-browser";
 import { DriverService } from "../modules/marketplace/driver-service";
 import { PickingService } from "../lib/picking-service";
 import { OrderOperationsService } from "../lib/order-operations-service";
@@ -662,6 +663,10 @@ export default async function verifyDispatch(args: ExecArgs, orchestration = fal
     } catch (error) { failures.push(error); }
     // Fixture-scoped only; no shared Redis clear, no disabling constraints/triggers.
     for (const cookie of cookies) { try { await http(cookie, "DELETE", "/auth/session"); } catch (error) { failures.push(error); } }
+    if(retainingBrowserFixture()) {
+      if(failures.length) throw new AggregateError(failures,"M18 retained dispatch fixture failed.");
+      return;
+    }
     try {
       const redis = new Redis(redisUrl);
       try {

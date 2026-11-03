@@ -1,8 +1,9 @@
-import type { MedusaContainer } from "@medusajs/framework/types";
+import type { MedusaContainer, ICustomerModuleService } from "@medusajs/framework/types";
+import type SafeStoreCreditService from "../modules/store-credit/service";
 import { RestrictedCommerce } from "./restricted-commerce";
 import type { PurchaserEligibilityProvider } from "../modules/marketplace/restricted-policy";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
-import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
 import type { PaymentInitiationResult } from "@gospaza/contracts";
 import { CartFoundationService } from "./cart-service";
 import { DeliveryReservationService } from "./delivery-reservation-service";
@@ -112,6 +113,11 @@ export class PaymentInitiationService {
         if (operation.account_fingerprint !== fingerprint(configuration.secretKey)) {
           throw new YocoProviderError("YOCO_CORRELATION_MISMATCH");
         }
+        if(snapshot.store_credit) {
+          const customer=await this.container.resolve<ICustomerModuleService>(Modules.CUSTOMER).retrieveCustomer(this.customerId);
+          if(customer.has_account!==true) throw conflict("CHECKOUT_RECONFIRM");
+          await this.container.resolve<SafeStoreCreditService>("store_credit").spendCheckout(attempt.id,this.customerId);
+        }
         await establishPaymentCollection(this.container, operation, input.cart_id);
         await establishPaymentSession(this.container, row.id, recover);
       } catch (error) {
@@ -134,6 +140,6 @@ export class PaymentInitiationService {
       hostedRedirect(operation.checkout.redirectUrl);
       return this.result(attempt, "ready", operation.checkout.redirectUrl);
       });
-    });
+    }, "pay");
   }
 }

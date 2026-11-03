@@ -26,6 +26,9 @@ export const paymentInitiationHandler = (recover: boolean) => async (req: Medusa
         res.status(404).json({ code: "CHECKOUT_UNAVAILABLE", message: "Checkout unavailable." }); return;
       }
       if (error.type === MedusaError.Types.CONFLICT) {
+        if (error.code === "CHECKOUT_ALREADY_PROCESSING") {
+          res.status(409).json({ code: error.code, message: "Checkout is already processing. Refresh checkout status." }); return;
+        }
         await new RestrictedCommerce(req.scope).blocked(actor.actor_id,error.message);
         if (["PURCHASER_VERIFICATION_UNAVAILABLE", "PURCHASER_VERIFICATION_NOT_VERIFIED", "PURCHASER_VERIFICATION_EXPIRED",
           "CLASSIFICATION_REVIEW_REQUIRED", "RESTRICTED_STORE_UNAVAILABLE", "RESTRICTED_CATEGORY_UNAVAILABLE", "RESTRICTED_TRADING_CLOSED"].includes(error.message)) {

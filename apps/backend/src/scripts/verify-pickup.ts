@@ -23,6 +23,8 @@ export interface PickupVerificationFixture {
     offer: Awaited<ReturnType<DispatchVerificationFixture["dispatch"]["offer"]>>;
   }>;
 }
+import { retainingBrowserFixture } from "./fixtures/financial-browser";
+
 export default async function verifyPickup(args: ExecArgs, extension?: (fixture: PickupVerificationFixture) => Promise<void>) {
   await verifyDispatch(args, false, false, async f => {
     const { container, first } = f.orders.fixture;
@@ -227,6 +229,10 @@ export default async function verifyPickup(args: ExecArgs, extension?: (fixture:
       assert.equal((await db("pickup_operation").where({ delivery_id: revoked.delivery.id, action: "SHIP" })).length, 0);
       if (extension) await extension({ f, assigned });
     } catch (error) { failures.push(error); }
+    if(retainingBrowserFixture()) {
+      if(failures.length) throw new AggregateError(failures,"M18 retained pickup fixture failed.");
+      return;
+    }
     // Only this callback's isolated native fixtures. Public native APIs, never
     // SQL against Medusa tables. Undo shipped_at only for teardown so the pinned
     // cancel-before-delete API can remove the synthetic fulfillment and children.

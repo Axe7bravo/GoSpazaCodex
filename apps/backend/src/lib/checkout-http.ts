@@ -22,10 +22,12 @@ export const checkoutHandler = (operation: "read" | "prepare" | "confirm" | "aba
         res.json(await service.abandon(req.body)); return;
       }
       const result = await service.prepare(req.body, operation === "confirm");
+
       res.status(result.reconfirmation_required ? 409 : 200).json({
         ...result, ...(result.reconfirmation_required ? { code: "CHECKOUT_RECONFIRM" } : {}),
       });
     } catch (error) {
+
       if (typeof error === "object" && error !== null && MedusaError.isMedusaError(error)) {
         if (error.type === MedusaError.Types.INVALID_DATA || error.type === MedusaError.Types.NOT_ALLOWED) {
           res.status(400).json({ code: "CHECKOUT_INPUT_INVALID", message: "Complete your address and refresh checkout." }); return;

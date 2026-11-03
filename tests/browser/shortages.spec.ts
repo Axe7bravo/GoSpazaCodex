@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { fixtureState, install, pending, resolved, openCustomer, openMerchant, customerBase, merchantBase, customerPath, merchantPath } from "./shortage-fixture";
 
-const financialCopy = "This quantity will not be supplied. Any payment adjustment has not yet been processed.";
+const financialCopy = "This quantity will not be supplied. See Payment and adjustments for any financial outcome.";
 const panel = (page: Page) => page.getByRole("region", { name: "Unavailable items", exact: true });
 const customerLine = (page: Page) => panel(page).getByRole("article", { name: "Fixture tomatoes", exact: true });
 const merchantLine = (page: Page) => page.getByRole("article", { name: "Fixture tomatoes", exact: true });

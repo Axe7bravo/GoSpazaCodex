@@ -7,6 +7,7 @@ import { checkoutRedirect, createCartClient, createCheckoutClient, createDeliver
 import type { CartFoundation, CheckoutAttemptInput, CheckoutPreparation, CustomerCheckoutStatus, DeliverySelection, SavedAddress } from "@gospaza/contracts";
 import { authClient } from "../auth-client";
 import PurchaserPanel from "./purchaser-panel";
+import Balance, {finance} from "../account/balance";
 
 const base = process.env.NEXT_PUBLIC_API_URL!;
 const key = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? "";
@@ -31,6 +32,7 @@ const copy: Record<CustomerCheckoutStatus["state"], { title: string; text: strin
 };
 interface Setup { foundation: CartFoundation; addresses: SavedAddress[]; selection: DeliverySelection | null }
 interface Actions {
+  applyBalance(use:boolean): void;
   refresh(): void;
   setup(): void;
   prepare(addressId: string): void;
@@ -110,6 +112,15 @@ function CheckoutContent({ returning }: { returning: boolean }) {
       } finally { if (!leaving) { writing = false; if (active) setBusy(""); } }
     }
     actions.current = {
+      applyBalance: (use) => { void mutate("Updating balance selection…", async version => {
+        if (!readiness?.foundation.cart || preparation) return;
+        try {
+          const funding=await finance.apply(use);
+          if (alive(version)) setNotice("GoSpaza balance applied: "+money(funding.applied_minor)+". Remaining to pay: "+money(funding.external_payable_minor)+".");
+        } catch {
+          throw new Error("Balance selection could not be confirmed. Review your checkout total before paying.");
+        }
+      }); },
       refresh: () => { if (!writing && active) { setLoading(true); void read(); } },
       setup: () => { void mutate("Loading checkout…", async (version) => {
         preparation = null; setPrepared(null); await loadSetup(version);
@@ -191,6 +202,7 @@ function CheckoutContent({ returning }: { returning: boolean }) {
         {setup && !prepared && <>
           {setup.foundation.cart?.items.length ? <>
             <h2>{setup.foundation.cart.store.name}</h2>
+            <Balance disabled={disabled} onApply={use=>actions.current?.applyBalance(use)}/>
             <label htmlFor="checkout-address">Delivery address</label>
             <select id="checkout-address" value={addressId} disabled={disabled} onChange={(event) => setAddressId(event.target.value)}>
               <option value="">Choose a saved address</option>
@@ -217,6 +229,7 @@ function CheckoutContent({ returning }: { returning: boolean }) {
           <dt>Discount</dt><dd>{money(quote.totals.discount_total_minor)}</dd>
           <dt>Tax</dt><dd>{money(quote.totals.tax_total_minor)}</dd>
           <dt>Delivery</dt><dd>{money(quote.totals.shipping_total_minor)}</dd>
+          {quote.store_credit_minor !== undefined && <><dt>GoSpaza balance applied</dt><dd>{money(quote.store_credit_minor)}</dd></>}
           <dt>Total to pay</dt><dd><strong>{money(quote.totals.total_minor)}</strong></dd></dl>
         <p>Totals are supplied by GoSpaza checkout. They are checked again before payment.</p>
         {prepared && <button type="button" disabled={disabled} onClick={() => actions.current?.confirm()}>
