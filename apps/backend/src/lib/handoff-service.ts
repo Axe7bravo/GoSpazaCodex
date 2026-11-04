@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { MedusaContainer } from "@medusajs/framework/types";
+import type { IEventBusModuleService, Logger, MedusaContainer } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
-import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
 import type { HandoffDTO, HandoffCodeDTO } from "@gospaza/contracts";
 import { PickupService, type PickupScope } from "./pickup-service";
 import { NativePickup } from "./pickup-native";
@@ -181,7 +181,7 @@ export class HandoffService {
     return this.read(identity, id);
   }
   async observe(id: string) {
-    await this.pickup.locked(id, undefined, async s => {
+    const deliveredOrder = await this.pickup.locked(id, undefined, async s => {
       await this.generations(s); const op = await this.operation(s);
       if (!op || op.state === "SUCCEEDED") return;
       let receipt: DeliveryCompletion["receipt"] = null;
@@ -202,7 +202,16 @@ export class HandoffService {
       await s.trx("dispatch_commitment").where({ id: s.c.id, status: "ASSIGNED" }).update({ status: "COMPLETED", revision: s.c.revision + 1, updated_at: now });
       await this.event(s, "NATIVE_DELIVERED_PROVEN");
       await this.event(s, "DELIVERED", { status: "DELIVERED", delivered_at: now });
+      return s.d.medusa_order_id;
     }, true);
+    if (deliveredOrder) {
+      try {
+        await this.container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
+          .emit({name:"gospaza.delivery-completed",data:{order_id:deliveredOrder}});
+      } catch {
+        this.container.resolve<Logger>(ContainerRegistrationKeys.LOGGER).warn("Marketplace finance recognition deferred to bounded repair.");
+      }
+    }
     // Terminal SQL state already revokes access. Cleanup is best effort and
     // generation-scoped; failure cannot reopen capacity or expose later trips.
     await this.pickup.locked(id, undefined, async s => {

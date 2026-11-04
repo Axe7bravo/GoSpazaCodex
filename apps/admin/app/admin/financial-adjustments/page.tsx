@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { OrderEconomicsPanel } from "@gospaza/ui/order-economics";
+import { platformCommission } from "@gospaza/api-client";
 import { useCallback, useState } from "react";
 import { adminFinance } from "@gospaza/api-client";
 import { SessionBoundary } from "@gospaza/ui/auth";
@@ -9,6 +11,7 @@ import { useDriverResource } from "@gospaza/ui/driver-resource";
 import { authClient } from "../../auth-client";
 
 const client=adminFinance(process.env.NEXT_PUBLIC_API_URL!);
+const economics=platformCommission(process.env.NEXT_PUBLIC_API_URL!);
 const denied=()=>window.location.replace("/login");
 const eventLabel:Record<string,string>={CREATED_FOR_REVIEW:"Submitted for review",AUTOMATICALLY_APPROVED:"Approved automatically",MANUALLY_APPROVED:"Approved by platform user"};
 const components={MERCHANDISE:"Merchandise",TAX:"Tax",DELIVERY_FEE:"Delivery fee",GOODWILL:"Customer care"};
@@ -31,7 +34,7 @@ function Detail({order,id}:{order:string;id:string}) {
     </>}
   </section>;
 }
-function Queue({offset,change,selected,select}:{offset:number;change:(n:number)=>void;selected:string;select:(id:string)=>void}) {
+function Queue({offset,change,selected,select,inspect}:{offset:number;change:(n:number)=>void;selected:string;select:(id:string)=>void;inspect:(order:string)=>void}) {
   const load=useCallback(()=>client.list(offset),[offset]);
   const r=useDriverResource(load,denied);
   const current=r.data?.adjustments.find(a=>a.id===selected);
@@ -44,15 +47,23 @@ function Queue({offset,change,selected,select}:{offset:number;change:(n:number)=
         <td><AdminSettlementStatus row={row}/></td></tr>)}</tbody></table></div> : <p>No adjustments on this page.</p>}
       <button disabled={offset===0} onClick={()=>change(offset-20)}>Previous page</button>
       <button disabled={r.data.adjustments.length<20} onClick={()=>change(offset+20)}>Next page</button>
-      {current && <Detail key={current.id} order={current.order_id} id={current.id}/>}
+      {current && <><button onClick={()=>inspect(current.order_id)}>Inspect this order’s marketplace economics</button>
+        <Detail key={current.id} order={current.order_id} id={current.id}/></>}
     </>}
   </>;
 }
 export default function FinancialAdjustments() {
   const [offset,setOffset]=useState(0);
+  const [lookup,setLookup]=useState<{actor:string;order:string}|null>(null);
   const [selection,setSelection]=useState<{actor:string;id:string}|null>(null);
   return <main className="application-layout"><SessionBoundary client={authClient} title="Financial adjustments">
-    {identity=>identity.type==="user" && <section className="application-content"><Link href="/">Admin home</Link><Queue key={identity.id+offset} offset={offset}
+    {identity=>identity.type==="user" && <section className="application-content"><Link href="/">Admin home</Link>
+      <form key={identity.id} onSubmit={event=>{event.preventDefault();setLookup({actor:identity.id,order:String(new FormData(event.currentTarget).get("order")??"").trim()});}}>
+        <label>Order reference <input name="order" required maxLength={100} pattern="[A-Za-z0-9_\-]+"/></label>
+        <button>Inspect order economics</button>
+      </form>
+      {lookup?.actor===identity.id && lookup.order && <OrderEconomicsPanel key={identity.id+lookup.order} id={lookup.order} load={economics.order} denied={denied}/>}
+      <Queue key={identity.id+offset} offset={offset} inspect={order=>setLookup({actor:identity.id,order})}
       change={n=>{setSelection(null);setOffset(n);}} selected={selection?.actor===identity.id ? selection.id:""}
       select={id=>setSelection({actor:identity.id,id})}/></section>}
   </SessionBoundary></main>;

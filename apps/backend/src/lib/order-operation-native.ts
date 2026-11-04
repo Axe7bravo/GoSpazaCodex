@@ -14,7 +14,7 @@ export async function readOperationalOrder(container: MedusaContainer, handoff: 
   const linked = await query.graph({ entity: "order_cart", fields: ["order_id", "cart_id"], filters: { order_id: handoff.order_id } });
   const links = z.array(z.object({ order_id: z.string(), cart_id: z.string() })).safeParse(linked.data);
   if (!links.success || links.data.length !== 1 || links.data[0]?.cart_id !== handoff.cart_id
-    || links.data[0]?.order_id !== handoff.order_id) throw orderUnavailable();
+    || links.data[0]?.order_id !== handoff.order_id) throw orderUnavailable("ORDER_EVIDENCE_MISMATCH");
   let order: OrderDTO;
   try {
     order = await container.resolve<IOrderModuleService>(Modules.ORDER).retrieveOrder(handoff.order_id, {
@@ -25,8 +25,11 @@ export async function readOperationalOrder(container: MedusaContainer, handoff: 
     });
     const cart = await container.resolve<ICartModuleService>(Modules.CART).retrieveCart(handoff.cart_id);
     if (!cart.completed_at || cart.customer_id !== handoff.snapshot.customer_id || order.customer_id !== cart.customer_id
-      || order.sales_channel_id !== cart.sales_channel_id) throw orderUnavailable();
-  } catch { throw orderUnavailable(); }
+      || order.sales_channel_id !== cart.sales_channel_id) throw orderUnavailable("ORDER_EVIDENCE_MISMATCH");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ORDER_EVIDENCE_MISMATCH") throw error;
+    throw orderUnavailable();
+  }
   // Do not hide foreign/changed lines by filtering them out. Compare the native
   // line identities to the single-store snapshot accepted by M10.
   const signature = (items: { variant_id?: string | null; quantity: unknown }[]) => items
@@ -35,7 +38,7 @@ export async function readOperationalOrder(container: MedusaContainer, handoff: 
   if (order.id !== handoff.order_id || order.status === "canceled" || order.currency_code !== "zar"
     || !order.items?.length || !order.shipping_address
     || order.shipping_methods?.length !== 1 || order.shipping_methods[0]?.shipping_option_id !== handoff.snapshot.shipping_option_id
-    || JSON.stringify(signature(order.items)) !== JSON.stringify(signature(handoff.snapshot.items))) throw orderUnavailable();
+    || JSON.stringify(signature(order.items)) !== JSON.stringify(signature(handoff.snapshot.items))) throw orderUnavailable("ORDER_EVIDENCE_MISMATCH");
   return order;
 }
 

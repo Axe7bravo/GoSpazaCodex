@@ -16,7 +16,11 @@ import type { OrderOperationsVerificationFixture } from "./verify-order-operatio
 
 import { retainingBrowserFixture } from "./fixtures/financial-browser";
 
-export default async function verifyRecipient(args:ExecArgs, afterCustody?: (orders:OrderOperationsVerificationFixture,deliveryId:string,orderId:string,additionalReturns:{deliveryId:string;orderId:string}[])=>Promise<void>) {
+interface RecognitionFixture {
+  beforeOrder(user:string,merchant:string):Promise<void>;
+  beforeDelivery(order:string):Promise<void>;
+}
+export default async function verifyRecipient(args:ExecArgs, afterCustody?: (orders:OrderOperationsVerificationFixture,deliveryId:string,orderId:string,additionalReturns:{deliveryId:string;orderId:string}[],driverCookie:string)=>Promise<void>, recognition?:RecognitionFixture) {
   if(!["development","test"].includes(process.env.APP_ENV??"")) throw new Error("Recipient fixtures require a local verification environment.");
   if(process.env.HANDOFF_WORKER_ENABLED==="true") throw new Error("Disable HANDOFF_WORKER_ENABLED in backend and verifier.");
   await verifyPickup(args,async({f,assigned})=>{
@@ -209,7 +213,7 @@ export default async function verifyRecipient(args:ExecArgs, afterCustody?: (ord
       assert.deepEqual(await nativeReturns(),returnsBefore);
       await assert.rejects(handoff.verify(a.who.identity,a.delivery.id,{expected_revision:state.revision,code:code.code}));
       const additionalReturns:{deliveryId:string;orderId:string}[]=[];
-      if(retainingBrowserFixture()) {
+      if(retainingBrowserFixture() && !recognition) {
         for(const label of ["non-sellable","stock-attention","restock"]) {
           const extra=await trip("browser-"+label);
           const arrived=await handoff.read(extra.who.identity,extra.delivery.id);
@@ -220,7 +224,10 @@ export default async function verifyRecipient(args:ExecArgs, afterCustody?: (ord
           additionalReturns.push({deliveryId:extra.delivery.id,orderId:extra.order.orderId});
         }
       }
-      const b=await trip("success"),bview=await handoff.read(b.who.identity,b.delivery.id),binput=observation(bview.revision);
+      await recognition?.beforeOrder(f.user,first.merchantId);
+      const b=recognition ? await trip("recognition-success",5,3) : await trip("success");
+      await recognition?.beforeDelivery(b.order.orderId);
+      const bview=await handoff.read(b.who.identity,b.delivery.id),binput=observation(bview.revision);
       assert.equal((await recipient.verify(b.who.identity,b.delivery.id,binput)).compliance,"SATISFIED");
       await pickup.locked(b.delivery.id,b.who.identity,async s=>{
         assert.equal(await recipientSatisfied(s,"foreign_or_superseded_generation"),false);
@@ -271,7 +278,7 @@ export default async function verifyRecipient(args:ExecArgs, afterCustody?: (ord
       const events=await db("restricted_event").whereIn("target_id",rows.map(r=>r.id));
       for(const value of [...rows,...events])for(const prohibited of ["1990-01-01","date_of_birth","document_number","latitude","longitude"])
         assert.equal(JSON.stringify(value).includes(prohibited),false);
-      if(afterCustody) await afterCustody(f.orders,a.delivery.id,a.order.orderId,additionalReturns);
+      if(afterCustody) await afterCustody(f.orders,a.delivery.id,a.order.orderId,additionalReturns,foreign.cookie);
     } finally {
       if(!retainingBrowserFixture()) {
       const orders=customers.length?await native.listOrders({customer_id:customers},{take:null}):[];

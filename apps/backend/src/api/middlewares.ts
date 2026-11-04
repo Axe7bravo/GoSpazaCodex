@@ -19,6 +19,7 @@ export default defineMiddlewares({
     // explicit execution capability, or C1's one-settlement reservation.
     { matcher: /^\/admin\/payments\/[^/]+\/refund\/?$/i, method: "POST", middlewares: [authOrigin, requireActor("user"), blockNativePayments] },
     { matcher: /^\/admin\/gospaza\/(?:financial-adjustments|orders\/[^/]+\/(?:goodwill|financial-resolution))(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: "/admin/gospaza/commission-rules", method: "POST", bodyParser: { sizeLimit: "8kb" } },
     { matcher: "/merchant/restricted-commerce/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/driver\/deliveries(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/merchant\/deliveries\/[^/]+\/return$/i, bodyParser: { sizeLimit: "8kb" } },

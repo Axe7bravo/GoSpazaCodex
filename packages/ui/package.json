@@ -8,6 +8,7 @@
     "./auth": "./src/auth.tsx",
     "./orders": "./src/orders.tsx",
     "./financial": "./src/financial.tsx",
+    "./order-economics": "./src/order-economics.tsx",
     "./driver-resource": "./src/driver-resource.ts",
     "./drivers": "./src/drivers.tsx",
     "./dispatch": "./src/dispatch.tsx",
