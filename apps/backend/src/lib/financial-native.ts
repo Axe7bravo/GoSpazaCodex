@@ -15,9 +15,7 @@ export interface FinancialEconomics {
   lines: FinancialLine[]; shipping_net_minor: number; shipping_tax_minor: number; fingerprint: string;
 }
 export async function readFinancialEconomics(container: MedusaContainer, handoff: CompletedOrderHandoff): Promise<FinancialEconomics> {
-  const order = await readOperationalOrder(container,handoff);
-  const receipt=z.object({ payment_id:z.string(),capture_id:z.string(),amount_minor:z.number().int() }).parse(handoff.terminal_receipt);
-  const payment=await container.resolve<IPaymentModuleService>(Modules.PAYMENT).retrievePayment(receipt.payment_id,{ relations:["captures","refunds"] });
+  const { order, payment, economics } = await readFinancialOrder(container,handoff);
   // C1 recognizes only an exact externally verified, locally designated native
   // refund. Out-of-band or provisional/uncorrelated refunds still fail closed.
   const db=container.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
@@ -30,6 +28,19 @@ export async function readFinancialEconomics(container: MedusaContainer, handoff
       || correlation?.gospazaProviderRefundId!==owned.provider_refund_id
       || financialMinor(refund.amount)!==Number(owned.amount_minor)) throw financialConflict();
   }
+  let registered = false;
+  if (order.customer_id) {
+    // has_account belongs to the native Customer; missing/failed lookup is not a guest fallback.
+    const customer = await container.resolve<ICustomerModuleService>(Modules.CUSTOMER).retrieveCustomer(order.customer_id);
+    if (typeof customer.has_account !== "boolean") throw financialConflict();
+    registered = customer.has_account;
+  }
+  return { ...economics, registered };
+}
+export async function readFinancialOrder(container: MedusaContainer, handoff: CompletedOrderHandoff) {
+  const order = await readOperationalOrder(container,handoff);
+  const receipt=z.object({ payment_id:z.string(),capture_id:z.string(),amount_minor:z.number().int() }).parse(handoff.terminal_receipt);
+  const payment=await container.resolve<IPaymentModuleService>(Modules.PAYMENT).retrievePayment(receipt.payment_id,{ relations:["captures","refunds"] });
   if (!payment.captures?.some(c=>c.id===receipt.capture_id)
     || receipt.amount_minor!==handoff.snapshot.totals.total_minor) throw financialConflict();
   const lines = (order.items ?? []).map(item => {
@@ -53,16 +64,9 @@ export async function readFinancialEconomics(container: MedusaContainer, handoff
   if (shippingTax > shippingTotal || external !== handoff.snapshot.totals.total_minor
     || safeSum(lines.flatMap(l => [l.net_minor,l.tax_minor]).concat(shippingTotal)) !== paid
     || safeSum(lines.map(l => l.tax_minor).concat(shippingTax)) !== handoff.snapshot.totals.tax_total_minor) throw financialConflict();
-  let registered = false;
-  if (order.customer_id) {
-    // has_account belongs to the native Customer; missing/failed lookup is not a guest fallback.
-    const customer = await container.resolve<ICustomerModuleService>(Modules.CUSTOMER).retrieveCustomer(order.customer_id);
-    if (typeof customer.has_account !== "boolean") throw financialConflict();
-    registered = customer.has_account;
-  }
-  const economics = { order_id:order.id, customer_id:order.customer_id ?? null, registered,
+  const economics = { order_id:order.id, customer_id:order.customer_id ?? null, 
     paid_minor:paid, lines, shipping_net_minor:shippingTotal-shippingTax, shipping_tax_minor:shippingTax };
   // Account registration is current eligibility, not historical price authority.
-  const fingerprint = createHash("sha256").update(JSON.stringify({ ...economics, registered:undefined })).digest("hex");
-  return { ...economics, fingerprint };
+  const fingerprint = createHash("sha256").update(JSON.stringify(economics)).digest("hex");
+  return { order, payment, economics: { ...economics, fingerprint } };
 }

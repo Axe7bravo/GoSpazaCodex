@@ -77,13 +77,24 @@ export class PickingService {
   // Keep M12/M13 accounting and native evidence in their existing owner.
   async completedForDispatch(trx: Knex.Transaction, merchantId: string, storeId: string, orderId: string) {
     const state = await this.load(trx, { merchant: { id: merchantId }, store: { id: storeId } }, orderId);
-    if (!state.session || state.session.status !== "COMPLETED" || !state.session.completed_at || !state.lines.length
-      || state.lines.some(line => !accounted(line.ordered_quantity_at_start, line.picked_quantity, omittedFor(line, state.resolutions)))
-      || !await trx("pick_event").where({ pick_session_id: state.session.id, revision: state.session.revision, action: "COMPLETE" }).first()) throw pickingConflict();
-    return { order: state.order, operation: state.operation, handoff: state.handoff, session: state.session,
-      physical: state.lines.map(line => ({ id: line.medusa_order_line_id, ordered: line.ordered_quantity_at_start,
-        picked: line.picked_quantity, omitted: omittedFor(line, state.resolutions) })),
-      financial_review_required: state.resolutions.some(row => row.financial_review_required) };
+    return { order: state.order, operation: state.operation, handoff: state.handoff,
+      ...await this.completedEvidence(trx,state.session,state.lines,state.resolutions) };
+  }
+  private async completedEvidence(trx:Knex.Transaction,session:Session|null|undefined,lines:Line[],resolutions:Awaited<ReturnType<typeof resolutionRows>>) {
+    if (!session || session.status!=="COMPLETED" || !session.completed_at || !lines.length
+      || lines.some(l=>l.deleted_at || !accounted(l.ordered_quantity_at_start,l.picked_quantity,omittedFor(l,resolutions)))
+      || !await trx("pick_event").where({pick_session_id:session.id,revision:session.revision,action:"COMPLETE"}).first()) throw pickingConflict();
+    return {session,physical:lines.map(l=>({id:l.medusa_order_line_id,ordered:l.ordered_quantity_at_start,
+      picked:l.picked_quantity,omitted:omittedFor(l,resolutions)})),financial_review_required:resolutions.some(r=>r.financial_review_required)};
+  }
+  // Internal historical reader. Caller has locked the OrderOperation and
+  // cross-checks the lines against the immutable finance snapshot and shipment.
+  async completedForRecognition(trx:Knex.Transaction,operationId:string) {
+    const session=await trx<Session>("pick_session").where({order_operation_id:operationId}).whereNull("deleted_at").forUpdate().first();
+    if(!session) throw pickingConflict();
+    const lines=await this.lines(trx,session.id);
+    const resolutions=await resolutionRows(trx,session.id);
+    return this.completedEvidence(trx,session,lines,resolutions);
   }
   private project(state: Awaited<ReturnType<PickingService["load"]>>): PickingOrder {
     return {

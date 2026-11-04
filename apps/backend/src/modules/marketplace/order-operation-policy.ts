@@ -14,7 +14,8 @@ export function orderParse<T>(schema: z.ZodType<T>, input: unknown): T {
   if (!parsed.success) throw new MedusaError(MedusaError.Types.INVALID_DATA, "Invalid order request.");
   return parsed.data;
 }
-export const orderUnavailable = () => new MedusaError(MedusaError.Types.CONFLICT, "Order information is unavailable. Please refresh.");
+export const orderUnavailable = (code?: "ORDER_EVIDENCE_MISMATCH") =>
+  new MedusaError(MedusaError.Types.CONFLICT, "Order information is unavailable. Please refresh.", code);
 
 // Existing M10 durable receipt. Workflow history is deliberately not required.
 const terminalReceipt = z.object({
@@ -35,7 +36,7 @@ export function completedOrderHandoff(value: unknown) {
   if (!row.success) throw orderUnavailable();
   const receipt = terminalReceipt.safeParse(row.data.terminal_receipt);
   const snapshot = checkoutSnapshot.safeParse(row.data.snapshot);
-  if (!receipt.success || !snapshot.success) throw orderUnavailable();
+  if (!receipt.success || !snapshot.success) throw orderUnavailable("ORDER_EVIDENCE_MISMATCH");
   const r = receipt.data, s = snapshot.data, h = row.data;
   if (r.order_id !== h.order_id || r.cart_id !== h.cart_id || s.cart_id !== h.cart_id
     || s.cart_context_id !== h.context_id || s.merchant_id !== h.merchant_id
@@ -43,7 +44,7 @@ export function completedOrderHandoff(value: unknown) {
     || r.amount_minor !== s.totals.total_minor || r.store_credit_minor!==s.store_credit?.amount_minor
     || r.gross_minor!==s.store_credit?.gross_minor || r.workflow_id !== h.workflow_id
     || r.transaction_id !== h.transaction_id || r.execution_id !== h.execution_id || r.run_id !== h.run_id) {
-    throw orderUnavailable();
+    throw orderUnavailable("ORDER_EVIDENCE_MISMATCH");
   }
   return { ...h, snapshot: s };
 }

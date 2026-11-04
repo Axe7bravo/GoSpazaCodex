@@ -5,6 +5,16 @@ import { createHmac, randomBytes } from "node:crypto";
 // manifest contains synthetic email addresses and resource IDs, never passwords.
 const acceptance=new AsyncLocalStorage<string>();
 export const retainingBrowserFixture=()=>acceptance.getStore()!==undefined;
+// Committed finance rows cannot be removed by the nested lifecycle verifier.
+// Reuse its retention scope without a browser manifest or reusable credentials.
+export async function withRetainedRecognitionFixture(work:()=>Promise<void>,browserSecret?:string) {
+  if(process.env.APP_ENV!=="test" || process.env.M18_C2B_RETAIN_FINANCIAL_FIXTURES!=="true"
+    || !new URL(process.env.DATABASE_URL??"").pathname.endsWith("_test")
+    || !["localhost","127.0.0.1","[::1]"].includes(new URL(process.env.BACKEND_URL??"").hostname))
+    throw new Error("Recognition verification requires an explicitly retained isolated test database.");
+  if(browserSecret!==undefined && !/^[a-f0-9]{32,128}$/i.test(browserSecret)) throw new Error("Invalid test fixture secret.");
+  await acceptance.run(browserSecret??randomBytes(32).toString("hex"),work);
+}
 export function fixturePassword(email:string) {
   const secret=acceptance.getStore();
   return secret ? createHmac("sha256",secret).update(email).digest("hex"):randomBytes(24).toString("hex");
