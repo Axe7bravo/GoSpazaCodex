@@ -1,5 +1,6 @@
 import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
 import { settlementAcceptanceScope } from "../lib/settlement-acceptance-scope";
+import { driverFinanceAcceptanceScope } from "../lib/driver-finance-acceptance-scope";
 import { blockNativeDelivery } from "../lib/pickup-http";
 import { blockNativePayments } from "../lib/checkout-http";
 import { blockNativeShipping } from "../lib/scheduling-http";
@@ -23,6 +24,8 @@ export default defineMiddlewares({
     { matcher: /^\/admin\/payments\/[^/]+\/refund\/?$/i, method: "POST", middlewares: [authOrigin, requireActor("user"), blockNativePayments] },
     { matcher: /^\/admin\/gospaza\/(?:financial-adjustments|orders\/[^/]+\/(?:goodwill|financial-resolution))(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: "/admin/gospaza/commission-rules", method: "POST", bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/admin\/gospaza\/driver-compensation(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/admin\/gospaza\/driver-payments(?:\/.*)?$/i, bodyParser: { sizeLimit: "16kb" } },
     { matcher: "/merchant/restricted-commerce/documents", method: "POST", bodyParser: { sizeLimit: "14mb" } },
     { matcher: /^\/driver\/deliveries(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/merchant\/deliveries\/[^/]+\/return$/i, bodyParser: { sizeLimit: "8kb" } },
@@ -50,6 +53,7 @@ export default defineMiddlewares({
     { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, driverBoundary] },
     { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },
     { matcher: /^\/(?:admin\/gospaza\/(?:merchant-settlements|merchant-payouts|settlement-period-policy)|merchant\/settlements)(?:\/.*)?$/i, middlewares: [settlementAcceptanceScope] },
+    { matcher: /^\/(?:admin\/gospaza\/(?:driver-finance|driver-payments|driver-compensation|driver-earnings)|driver\/earnings)(?:\/.*)?$/i, middlewares: [driverFinanceAcceptanceScope] },
   ],
 });
 

@@ -12,6 +12,7 @@
     "./order-economics": "./src/order-economics.tsx",
     "./driver-resource": "./src/driver-resource.ts",
     "./drivers": "./src/drivers.tsx",
+    "./driver-finance": "./src/driver-finance.tsx",
     "./dispatch": "./src/dispatch.tsx",
     "./drivers.css": "./src/drivers.css"
   },
