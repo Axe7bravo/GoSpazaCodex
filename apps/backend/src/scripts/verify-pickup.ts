@@ -10,13 +10,14 @@ import { PickupService } from "../lib/pickup-service";
 import { NativePickup } from "../lib/pickup-native";
 import type { PickupOperation } from "../modules/marketplace/pickup-policy";
 import { DriverService } from "../modules/marketplace/driver-service";
+import type { DispatchService } from "../lib/dispatch-service";
 
 const state = z.object({ pickup: z.object({ delivery_id: z.string(), revision: z.number(), state: z.string(),
   restricted_content_present: z.boolean(), picked_up_at: z.string().nullable() }).strict() }).strict();
 
 export interface PickupVerificationFixture {
   f: DispatchVerificationFixture;
-  assigned: (label: string, quantity?: number, physical?: number, merchant?: boolean, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4]) => Promise<{
+  assigned: (label: string, quantity?: number, physical?: number, merchant?: boolean, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4], assignmentDispatch?: DispatchService) => Promise<{
     order: Awaited<ReturnType<DispatchVerificationFixture["completed"]>>;
     who: Awaited<ReturnType<DispatchVerificationFixture["driver"]>>;
     delivery: Awaited<ReturnType<DispatchVerificationFixture["dispatch"]["ensure"]>>;
@@ -35,12 +36,12 @@ export default async function verifyPickup(args: ExecArgs, extension?: (fixture:
     const query = container.resolve<{ graph(input: { entity: string; fields: string[]; filters: Record<string, unknown> }): Promise<{ data: unknown[] }> }>(ContainerRegistrationKeys.QUERY);
     const service = new PickupService(container);
     const drivers = new DriverService(container), orderIds: string[] = [], failures: unknown[] = [];
-    async function assigned(label: string, quantity = 1, physical = quantity, merchant = false, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4]) {
+    async function assigned(label: string, quantity = 1, physical = quantity, merchant = false, purchaser?: Parameters<DispatchVerificationFixture["completed"]>[4], assignmentDispatch = f.dispatch) {
       const order = await f.completed("m16-" + label, physical === 0, quantity, physical, purchaser); orderIds.push(order.orderId);
       const who = await f.driver("m16-" + label, merchant ? first.store.id : undefined); await f.online(who);
-      const delivery = await f.dispatch.ensure(order.orderId); await f.dispatch.start(delivery.id);
-      const offer = await f.dispatch.offer(delivery.id, who.id);
-      await f.dispatch.decide(who.identity, offer.id, "ACCEPT", { expected_revision: offer.revision });
+      const delivery = await assignmentDispatch.ensure(order.orderId); await assignmentDispatch.start(delivery.id);
+      const offer = await assignmentDispatch.offer(delivery.id, who.id);
+      await assignmentDispatch.decide(who.identity, offer.id, "ACCEPT", { expected_revision: offer.revision });
       return { order, who, delivery, offer };
     }
     async function read(cookie: string) { return state.parse(await f.http(cookie, "GET", "/driver/deliveries/current")).pickup; }

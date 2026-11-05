@@ -14,6 +14,7 @@ import type { AvailabilityRow, CommitmentRow, DeliveryRow, DispatchConfigRow } f
 import { RedisDispatchLocations } from "./dispatch-location";
 import type { DispatchLocations } from "./dispatch-location";
 import { dispatchReadiness } from "./dispatch-readiness";
+import { assignmentCompensation, freezeAssignmentCompensation, lockCompensationSelection } from "./driver-compensation";
 import { PickupService } from "./pickup-service";
 
 type Eligibility = Awaited<ReturnType<DriverService["eligibility"]>>;
@@ -315,16 +316,26 @@ export class DispatchService {
       if (!this.matches(availability, e) || availability?.generation !== c.availability_generation || e.affiliation_id !== c.affiliation_id) {
         await this.closeOffer(trx, d, c, "CANCELLED", "ELIGIBILITY_LOST", system, await databaseTime(trx)); return { conflict: true };
       }
+      // Publication can wait, but must not insert a new wait after the final
+      // location-freshness check. Publishers acquire no operational locks.
+      await lockCompensationSelection(trx);
       if (!await this.candidateIn(trx, d, e, r, c)) return { conflict: true }; // Redis absence alone never erases commitment
-      const committedAt = await databaseTime(trx);
+      const compensation = await assignmentCompensation(trx, c.id);
+      const committedAt = new Date(compensation.at);
       if (committedAt >= new Date(c.expires_at) || committedAt >= new Date(d.deadline)) {
         await this.closeOffer(trx, d, c, "EXPIRED", "OFFER_EXPIRED", system, committedAt); return { conflict: true };
       }
+      // Return rather than throw here: the missing-terms exception/audit must
+      // commit while the unaccepted offer and occupied offer capacity survive.
+      if (compensation.state === "MISSING_COMPENSATION_TERMS") return { compensationMissing: true };
       const [assigned] = await trx<CommitmentRow>("dispatch_commitment").where({ id }).update({ status: "ASSIGNED", revision: c.revision + 1,
-        assigned_at: committedAt, decided_at: committedAt, updated_at: committedAt }).returning("*");
+        assigned_at: trx.raw("?::timestamptz", [compensation.at]), decided_at: committedAt, updated_at: committedAt }).returning("*");
+      await freezeAssignmentCompensation(trx, c.id, compensation);
       await this.change(trx, d, { status: "ASSIGNED", restricted_content_present: d.restricted_content_present || !!r?.restricted }, "ASSIGNED", { type: "driver", id: p.id }, { commitment_id: id });
       return { result: assigned };
     });
+    if ("compensationMissing" in outcome) throw new MedusaError(MedusaError.Types.CONFLICT,
+      "Driver compensation terms are unavailable. Refresh before continuing.", "MISSING_COMPENSATION_TERMS");
     if ("conflict" in outcome || !outcome.result) return dispatchConflict();
     return { id: outcome.result.id, status: outcome.result.status, revision: outcome.result.revision };
   }

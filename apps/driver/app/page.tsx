@@ -6,6 +6,7 @@ import { useDriverResource } from "@gospaza/ui/driver-resource";
 import { DriverFeedback, DriverPages, DriverSummary, driverLabel } from "@gospaza/ui/drivers";
 import { authClient, driverClient } from "./auth-client";
 import DispatchPanel from "./dispatch-panel";
+import Link from "next/link";
 const denied = () => window.location.replace("/login");
 const historyLoad = () => driverClient.history();
 
@@ -79,6 +80,7 @@ export default function Page() {
   const editable = account && ["INCOMPLETE", "CHANGES_REQUIRED"].includes(account.profile.status);
   return <main className="driver-workspace driver-mobile">
     <p className="brand">GoSpaza</p><h1>Driver portal</h1>
+    <Link href="/driver/earnings">Earnings and payments</Link>
     <div className="driver-actions"><button disabled={resource.busy} onClick={() => void resource.refresh()}>Refresh profile</button>
       {account !== undefined && <button disabled={resource.busy} onClick={() => void resource.mutate(async () => { await authClient.logout(); denied(); })}>Sign out</button>}</div>
     <DriverFeedback error={resource.error} notice={resource.notice} loading={account === undefined} />

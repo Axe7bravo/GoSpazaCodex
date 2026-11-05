@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { isolatedEnvironment, verifierPath } from "../scripts/isolated-verifier";
 
 const file={DATABASE_URL:"postgres://user:pg-secret@localhost:5432/gospaza?sslmode=disable",
@@ -42,4 +44,12 @@ test("only one declared Medusa verification script can be executed",()=>{
     assert.equal(verifierPath(args,scripts),"./src/scripts/verify-example.ts");
   for(const args of [[],["dev"],["test:unsafe"],["test:unknown"],["test:example","extra"],["test:example;echo"]])
     assert.throws(()=>verifierPath(args,scripts));
+});
+
+test("M21 fixture registration satisfies the unchanged isolated-verifier admission contract",()=>{
+  const scripts=JSON.parse(readFileSync(resolve(__dirname,"../package.json"),"utf8")).scripts;
+  assert.equal(verifierPath(["--","test:driver-finance-fixtures"],scripts),"./src/scripts/verify-driver-finance-fixtures.ts");
+  assert.throws(()=>verifierPath(["test:driver-finance-fixtures"],{
+    ...scripts,"test:driver-finance-fixtures":"medusa exec ./src/scripts/prepare-driver-finance.ts",
+  }));
 });
