@@ -33,3 +33,4 @@ export * from "./restricted-commerce";
 export * from "./recipient";
 export * from "./financial";
 export * from "./commission";
+export * from "./merchant-settlements";
