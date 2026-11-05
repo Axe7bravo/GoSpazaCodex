@@ -1,4 +1,5 @@
 import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
+import { settlementAcceptanceScope } from "../lib/settlement-acceptance-scope";
 import { blockNativeDelivery } from "../lib/pickup-http";
 import { blockNativePayments } from "../lib/checkout-http";
 import { blockNativeShipping } from "../lib/scheduling-http";
@@ -13,6 +14,8 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: /^\/admin\/gospaza\/merchant-payouts(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
+    { matcher: /^\/admin\/gospaza\/(?:merchant-settlements|settlement-period-policy)(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/admin\/returns(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
     { matcher: /^\/merchant\/deliveries\/[^/]+\/dispositions$/i, bodyParser: { sizeLimit: "4kb" } },
     // Native financial mutation routes cannot bypass adjustment eligibility,
@@ -46,6 +49,7 @@ export default defineMiddlewares({
     { matcher: /^\/merchant(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, merchantBoundary] },
     { matcher: /^\/driver(?:\/.*)?$/i, middlewares: [actorCors, authOrigin, driverBoundary] },
     { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },
+    { matcher: /^\/(?:admin\/gospaza\/(?:merchant-settlements|merchant-payouts|settlement-period-policy)|merchant\/settlements)(?:\/.*)?$/i, middlewares: [settlementAcceptanceScope] },
   ],
 });
 
