@@ -8,6 +8,8 @@ import { resourceId } from "../modules/marketplace/team-policy";
 import { applicantIdentity } from "./applicant-auth";
 import { driverIdentity } from "./driver-auth";
 import { updateDriverWorkflow } from "../workflows/update-driver";
+import { platformAccess } from "./platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 
 const service = (req: MedusaRequest) => new DriverService(req.scope);
 const id = (value: unknown) => driverParse(resourceId, value);
@@ -37,6 +39,7 @@ export function mutation(scope: "driver" | "merchant" | "user", action: DriverAc
     prepare(req, res);
     const principal: DriverPrincipal = scope === "driver" ? { type: scope, identity: driverIdentity(req) }
       : scope === "merchant" ? { type: scope, identity: applicantIdentity(req) } : { type: scope, id: user(req) };
+    if (principal.type === "user") await platformAccess(req.scope, principal.id, ...legacyCapabilities.driverWrite);
     const profile_id = scope === "user" ? id(req.params.id) : undefined;
     const affiliation_id = scope === "merchant" ? id(req.params.id) : affiliation ? id(req.params.affiliationId) : undefined;
     const body = driverCommand(action, req.body);

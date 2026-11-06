@@ -23,7 +23,8 @@ export interface InvoiceRow { id: string; order_operation_id: string; medusa_ord
 export class RestrictedDeliveryDocument {
   constructor(private readonly container: MedusaContainer) {}
   async ensure(trx: Knex.Transaction, operationId: string, handoff: CompletedOrderHandoff,
-    physical: { id: string; ordered: number; picked: number; omitted: number }[]) {
+    physical: { id: string; ordered: number; picked: number; omitted: number }[], existingOnly = false) {
+    if (existingOnly && !await trx<InvoiceRow>("restricted_delivery_document").where({ order_operation_id: operationId }).first("id")) throw recipientConflict();
     const policy = deliveryDocumentPolicy(), restriction = handoff.snapshot.restricted_commerce;
     if (!policy || !restriction?.restricted_content_present) throw recipientConflict();
     const authority = await new RestrictedCommerce(this.container).supplyAuthority(trx,handoff.merchant_store_id,restriction.classifications,"dispatch");
@@ -44,6 +45,7 @@ export class RestrictedDeliveryDocument {
         || Object.entries(saved.address).some(([key,value]) => address[key] !== value && !(value === "" && address[key] == null))) throw recipientConflict();
       return existing;
     }
+    if (existingOnly) throw recipientConflict(); // Rescue validates retained evidence; it never creates an invoice.
     const merchant = await trx<{ legal_name: string }>("merchant").where({ id: handoff.merchant_id }).first();
     if (!merchant?.legal_name) throw recipientConflict();
     const id = "rdoc_"+randomUUID();

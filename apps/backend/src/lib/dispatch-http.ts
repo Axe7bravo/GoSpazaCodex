@@ -8,6 +8,8 @@ import { dispatchCommandWorkflow } from "../workflows/dispatch-command";
 import { applicantIdentity } from "./applicant-auth";
 import { DispatchProjection } from "./dispatch-projection";
 import { DeliveryTracking } from "./delivery-tracking";
+import { platformAccess } from "./platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 export function orderDelivery(actor: "merchant" | "customer") {
   return async (req: MedusaRequest, res: MedusaResponse) => {
     prepare(req, res);
@@ -47,6 +49,7 @@ export function command(action: "ONLINE" | "OFFLINE" | "ACCEPT" | "DECLINE" | "C
   return async (req: MedusaRequest, res: MedusaResponse) => {
     prepare(req, res);
     const actor = action === "CONFIGURE" ? { type: "user" as const, id: platform(req) } : { type: "driver" as const, id: driverIdentity(req) };
+    if (actor.type === "user") await platformAccess(req.scope, actor.id, ...legacyCapabilities.configurationWrite);
     const id = ["ACCEPT","DECLINE","CONFIGURE"].includes(action) ? dispatchParse(resourceId, req.params.id) : undefined;
     const body = action === "CONFIGURE" ? dispatchParse(dispatchConfigurationInput, req.body) : dispatchParse(dispatchRevision, req.body);
     const { result } = await dispatchCommandWorkflow(req.scope).run({ input: { actor, action, id, body } });

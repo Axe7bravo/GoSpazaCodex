@@ -1,8 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { MedusaContainer, IUserModuleService } from "@medusajs/framework/types";
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils";
-import type { DispatchConfiguration, DriverAvailabilityDTO, DriverCommitmentDTO } from "@gospaza/contracts";
+import type { DispatchConfiguration, DriverAvailabilityDTO, DriverCommitmentDTO, DeliveryRescueResult } from "@gospaza/contracts";
+import { platformAccess } from "./platform-access";
+import { MarketplaceOperationsRead } from "../modules/marketplace/operations-read";
+import { nextRescueGeneration, rescueConflict, rescueInput } from "../modules/marketplace/delivery-rescue-policy";
 import { DriverService } from "../modules/marketplace/driver-service";
 import { databaseTime } from "../modules/marketplace/delivery-reservation-repository";
 import { resourceId } from "../modules/marketplace/team-policy";
@@ -16,6 +19,7 @@ import type { DispatchLocations } from "./dispatch-location";
 import { dispatchReadiness } from "./dispatch-readiness";
 import { assignmentCompensation, freezeAssignmentCompensation, lockCompensationSelection } from "./driver-compensation";
 import { PickupService } from "./pickup-service";
+import { requirePlatformGrant, legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 
 type Eligibility = Awaited<ReturnType<DriverService["eligibility"]>>;
 type Ready = Awaited<ReturnType<typeof dispatchReadiness>>;
@@ -43,6 +47,7 @@ export class DispatchService {
     return s ?? dispatchMissing();
   }
   private async user(id: string) {
+    requirePlatformGrant(id, ...legacyCapabilities.configurationRead);
     if (!id) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform authentication required.");
     await this.container.resolve<IUserModuleService>(Modules.USER).retrieveUser(id);
   }
@@ -52,11 +57,13 @@ export class DispatchService {
     return { mode: row?.mode ?? "DISABLED", revision: row?.revision ?? 0 };
   }
   async configure(user: string, storeId: string, body: unknown): Promise<DispatchConfiguration> {
+    requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
     const input = dispatchParse(dispatchConfigurationInput, body);
     await this.user(user); const store = await this.store(storeId);
     return this.db.transaction(async trx => {
       await trx("merchant").where({ id: store.merchant_id }).forUpdate().first();
       await this.user(user);
+      requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
       const row = await trx<DispatchConfigRow>("store_dispatch_configuration").where({ merchant_store_id: storeId }).forUpdate().first();
       if ((row?.revision ?? 0) !== input.expected_revision) return dispatchConflict();
       const revision = (row?.revision ?? 0) + 1, id = row?.id ?? "dcfg_" + randomUUID();
@@ -203,11 +210,64 @@ export class DispatchService {
       if (d.status !== "PENDING_DISPATCH") return d; // no restart of an exhausted generation
       const r = await this.ready(trx, d), now = await databaseTime(trx);
       if (!this.enabled(d, r, now) || !r?.config) return dispatchConflict("DISPATCH_NOT_READY");
-      const path = initialPath(r.config.mode);
-      return this.change(trx, d, { status: "SEARCHING", generation: 1, mode: r.config.mode, configuration_revision: r.config.revision,
-        path, started_at: now, deadline: new Date(now.getTime() + this.policy.searchMs),
+      return this.beginSearch(trx, d, r, now, 1, "SEARCH_STARTED");
+    });
+  }
+  // Shared by initial admission and controlled rescue. Offers and capacity are
+  // still exclusively owned by the normal M15 candidate/offer/accept machinery.
+  private async beginSearch(trx: Knex.Transaction, d: DeliveryRow, r: Ready, now: Date, generation: number,
+    action: string, actor: Actor = system, evidence: Record<string, unknown> = {}) {
+    if (!r.config || r.config.mode === "DISABLED") return dispatchConflict("DISPATCH_NOT_READY");
+    return this.change(trx, d, { status: "SEARCHING", generation, mode: r.config.mode, configuration_revision: r.config.revision,
+        reason: null, path: initialPath(r.config.mode), started_at: now, deadline: new Date(now.getTime() + this.policy.searchMs),
         merchant_deadline: r.config.mode === "HYBRID" ? new Date(now.getTime() + Math.min(this.policy.merchantPhaseMs, this.policy.searchMs)) : null,
-        offer_ms: this.policy.offerMs, dispatch_not_before: r.notBefore, restricted_content_present: d.restricted_content_present || r.restricted }, "SEARCH_STARTED");
+        offer_ms: this.policy.offerMs, dispatch_not_before: r.notBefore, restricted_content_present: d.restricted_content_present || r.restricted }, action, actor, evidence);
+  }
+  async rescue(actor: string, id: string, body: unknown): Promise<DeliveryRescueResult> {
+    const capabilities = ["DELIVERY_OPERATIONS_VIEW", "DELIVERY_RESCUE"] as const;
+    await platformAccess(this.container, actor, ...capabilities);
+    dispatchParse(resourceId, id); const input = dispatchParse(rescueInput, body);
+    const fingerprint = createHash("sha256").update(JSON.stringify({ actor, id, ...input })).digest("hex");
+    const result = (row: { id: string; delivery_id: string; prior_generation: number; new_generation: number; new_revision: number; recorded_at: Date }): DeliveryRescueResult => ({
+      rescue_id: row.id, delivery_id: row.delivery_id, prior_generation: row.prior_generation, generation: row.new_generation,
+      revision: row.new_revision, status: "SEARCHING", recorded_at: new Date(row.recorded_at).toISOString(),
+    });
+    return this.db.transaction(async trx => {
+      // Request identity first (also fences changed-target reuse); no driver lock.
+      await trx.raw("select pg_advisory_xact_lock(hashtextextended(?,0))", ["delivery-rescue-request:" + input.request_id]);
+      await platformAccess(this.container, actor, ...capabilities);
+      const prior = await trx("delivery_rescue_command").where({ request_id: input.request_id }).first();
+      if (prior) {
+        if (prior.fingerprint !== fingerprint || prior.actor_id !== actor || prior.delivery_id !== id) return rescueConflict("RESCUE_CHANGED_REPLAY");
+        return result(prior); // Persisted receipt wins even after later dispatch progress.
+      }
+      const observed = await trx<DeliveryRow>("delivery_operation").where({ id }).first(); if (!observed) return dispatchMissing();
+      await trx("dispatch_work").insert({ delivery_id: id }).onConflict("delivery_id").ignore();
+      await trx("dispatch_work").where({ delivery_id: id }).forUpdate().first();
+      await trx("merchant").where({ id: observed.merchant_id }).forUpdate().first();
+      const d = await this.lockDelivery(trx, id);
+      if (d.revision !== input.expected_revision || d.generation !== input.expected_generation || d.status !== input.expected_status)
+        return rescueConflict("RESCUE_STALE_STATE");
+      const diagnostic = await new MarketplaceOperationsRead(trx, async () => { throw Error("Native Order reader is not used by the persisted Delivery precheck."); }).delivery(id);
+      if (!diagnostic.rescue.eligible) return rescueConflict(diagnostic.rescue.block_reason ? "RESCUE_" + diagnostic.rescue.block_reason : undefined);
+      const maximum = await trx("dispatch_commitment").where({ delivery_id: id }).max<{ maximum: number | null }>("generation as maximum").first();
+      const generation = nextRescueGeneration(d.generation, Math.max(d.generation, Number(maximum?.maximum ?? 0)));
+      // Required native reads/current supply policy; no workflow mutation and no
+      // missing restricted document creation is permitted in rescue admission.
+      const r = await dispatchReadiness(this.container, trx, d, this.policy, undefined, true), now = await databaseTime(trx);
+      if (!r.config || r.config.mode === "DISABLED" || !dispatchTimeReady(r.notBefore, now) || r.zone.id !== d.service_zone_id
+        || r.session.id !== d.pick_session_id || r.hold.id !== d.reservation_id || r.restricted !== d.restricted_content_present)
+        return rescueConflict("RESCUE_READINESS_LOST");
+      await platformAccess(this.container, actor, ...capabilities);
+      const receipt = { id: "rescue_" + randomUUID(), request_id: input.request_id, actor_id: actor, delivery_id: id, fingerprint,
+        prior_generation: d.generation, prior_revision: d.revision, prior_reason: d.reason, new_generation: generation,
+        new_revision: d.revision + 1, configuration_revision: r.config.revision, mode: r.config.mode, reason_code: input.reason_code, recorded_at: now };
+      await trx("delivery_rescue_command").insert(receipt);
+      const reopened = await this.beginSearch(trx, d, r, now, generation, "SEARCH_REOPENED", { type: "user", id: actor },
+        { rescue_id: receipt.id, request_id: input.request_id, prior_generation: d.generation, new_generation: generation,
+          prior_revision: d.revision, prior_reason: d.reason, configuration_revision: r.config.revision, mode: r.config.mode, reason_code: input.reason_code });
+      await trx("dispatch_work").where({ delivery_id: id }).update({ observed_revision: reopened.revision, scan_offset: 0, last_error: null, next_due_at: now });
+      return result(receipt);
     });
   }
   async preflight(id: string) {

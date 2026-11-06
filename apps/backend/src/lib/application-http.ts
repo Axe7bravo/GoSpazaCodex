@@ -9,6 +9,14 @@ import { emptyReviewInput, reasonInput, approvalInput } from "../modules/marketp
 import type { ReviewAction } from "../modules/marketplace/review-policy";
 import type { AuthenticatedMedusaRequest } from "@medusajs/framework/http";
 import { applicantIdentity } from "./applicant-auth";
+import { platformAccess } from "./platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
+async function platformReviewer(req: MedusaRequest, action: "merchantRead" | "merchantWrite" | "merchantDocument") {
+  const context = (req as AuthenticatedMedusaRequest).auth_context;
+  if (context?.actor_type !== "user" || !context.actor_id) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform user required.");
+  await platformAccess(req.scope, context.actor_id, ...legacyCapabilities[action]);
+  return context.actor_id;
+}
 export function appDTO(row: ApplicationRow) {
   const fields = Object.fromEntries(Object.keys(applicationFields.shape).map((key) => [key, row[key as keyof ApplicationRow]]));
   return { id: row.id, ...fields, status: row.status, submitted_at: row.submitted_at, last_submitted_at: row.last_submitted_at, created_at: row.created_at, updated_at: row.updated_at };
@@ -60,16 +68,19 @@ export async function remove(req: MedusaRequest, res: MedusaResponse) {
   res.json({ success: true });
 }
 export async function adminList(req: MedusaRequest, res: MedusaResponse) {
+  await platformReviewer(req, "merchantRead");
   const result = await service(req).listSubmitted(parse(listSchema, req.query));
   res.setHeader("Cache-Control", "no-store");
   res.json({ ...result, applications: result.applications.map(appDTO) });
 }
 export async function adminDetail(req: MedusaRequest, res: MedusaResponse) {
+  await platformReviewer(req, "merchantRead");
   const result = await service(req).detail(id(req));
   if (result.application.status === "DRAFT") throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application not found.");
   await respond(req, res, result);
 }
 export const access = (admin = false) => async (req: MedusaRequest, res: MedusaResponse) => {
+  if (admin) await platformReviewer(req, "merchantDocument");
   const applicationId = id(req);
   if (admin && (await service(req).detail(applicationId)).application.status === "DRAFT") throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application not found.");
   const document = await service(req).document(applicationId, id(req, "documentId"), admin ? undefined : applicantIdentity(req));
@@ -86,12 +97,14 @@ function reviewDTO(event: { id: string; action: string; reason: string; from_sta
     to_status: event.to_status, created_at: event.created_at, ...(admin ? { platform_user_id: event.platform_user_id } : {}) };
 }
 export const history = (admin = false) => async (req: MedusaRequest, res: MedusaResponse) => {
+  if (admin) await platformReviewer(req, "merchantRead");
   const applicationId = id(req);
   if (admin && (await service(req).detail(applicationId)).application.status === "DRAFT") throw new MedusaError(MedusaError.Types.NOT_FOUND, "Application not found.");
   const events = await service(req).reviewHistory(applicationId, admin ? undefined : applicantIdentity(req));
   res.setHeader("Cache-Control", "no-store"); res.json({ review_history: events.map((event) => reviewDTO(event, admin)) });
 };
 export const decision = (action: ReviewAction) => async (req: MedusaRequest, res: MedusaResponse) => {
+  await platformReviewer(req, "merchantWrite");
   const context = (req as AuthenticatedMedusaRequest).auth_context;
   if (context?.actor_type !== "user" || !context.actor_id) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform user required.");
   const applicationId = id(req);

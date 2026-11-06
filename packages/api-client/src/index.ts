@@ -64,3 +64,4 @@ export * from "./commission";
 export * from "./merchant-settlements";
 export * from "./driver-finance";
 export * from "./notifications";
+export * from "./operations";

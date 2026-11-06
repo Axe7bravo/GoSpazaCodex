@@ -8,6 +8,7 @@ import type DriverAffiliation from "./models/driver-affiliation";
 import type DriverEvent from "./models/driver-event";
 import type MarketplaceService from "./service";
 import { withMerchantAuthorization } from "./merchant-authorization";
+import { requirePlatformGrant, legacyCapabilities } from "./platform-capabilities";
 import { databaseTime } from "./delivery-reservation-repository";
 import { merchantDriverActions, driverApprovalEligibility, driverCommand, driverConflict, driverFields, driverFingerprint, driverMissing, driverPage, driverParse, driverReviewPage, lifecycleTransition, openAffiliations, persistentEligibility } from "./driver-policy";
 import type { DriverAction } from "./driver-policy";
@@ -51,14 +52,16 @@ export class DriverService {
     if (!p) throw unauthorized();
     return p;
   }
-  private async platform(id: string) {
+  private async platform(id: string, write = false) {
+    requirePlatformGrant(id, ...(write ? legacyCapabilities.driverWrite : legacyCapabilities.driverRead));
     if (!id) throw unauthorized();
-    // Encapsulated platform trust boundary; M23 may narrow this policy.
+    // Native identity and explicit current grants are independent requirements.
     try { await this.container.resolve<IUserModuleService>(Modules.USER).retrieveUser(id); }
     catch (error) {
       if (MedusaError.isMedusaError(error) && error.type === MedusaError.Types.NOT_FOUND) throw unauthorized();
       throw error;
     }
+    requirePlatformGrant(id, ...(write ? legacyCapabilities.driverWrite : legacyCapabilities.driverRead));
   }
   private open(db: Knex, profile: string) {
     return db<Affiliation>("driver_affiliation").where({ driver_profile_id: profile }).whereIn("status", openAffiliations).whereNull("deleted_at").first();
@@ -175,7 +178,7 @@ export class DriverService {
     if ((principal.type === "driver" && !driverActions.includes(action)) || (principal.type === "merchant" && !merchantActions.includes(action))
       || (principal.type === "user" && [...driverActions, "ENDORSE"].includes(action))) throw forbidden();
     if (principal.type === "driver") profileId = (await this.profileForIdentity(principal.identity)).id;
-    if (principal.type === "user") await this.platform(principal.id);
+    if (principal.type === "user") await this.platform(principal.id, true);
     if (principal.type === "merchant") {
       if (!affiliationId) return driverMissing();
       return withMerchantAuthorization(this.db, this.market, principal.identity, "MERCHANT_DRIVER_AFFILIATION_MANAGE", async (trx, tenant) => {
@@ -197,7 +200,7 @@ export class DriverService {
       if (!p) return driverMissing();
       if (principal.type === "driver" && p.auth_identity_id !== principal.identity) return driverMissing();
       if (!await this.nativeIdentityValid(p.auth_identity_id)) throw unauthorized();
-      if (principal.type === "user") await this.platform(principal.id);
+      if (principal.type === "user") await this.platform(principal.id, true);
       const current = await this.open(trx, id);
       if ((current?.id ?? null) !== (observed?.id ?? null)) return driverConflict();
       return this.change(trx, id, affiliationId, action, input, { type: principal.type, id: principal.type === "driver" ? id : principal.id }, merchant);

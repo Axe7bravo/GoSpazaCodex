@@ -2,8 +2,11 @@ import { LocationService } from "../lib/location-service";
 import { ensureCommerce } from "../lib/commerce";
 import { createStep, StepResponse, createWorkflow, WorkflowResponse } from "@medusajs/framework/workflows-sdk";
 import type MarketplaceService from "../modules/marketplace/service";
+import { platformAccess } from "../lib/platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 type Input = { applicationId: string; platformUserId: string; reason: string };
 const provisionMerchant = createStep("gospaza-provision-merchant-atomically", async (input: Input, { container }) => {
+  await platformAccess(container, input.platformUserId, ...legacyCapabilities.merchantWrite);
   const context = await container.resolve<MarketplaceService>("marketplace").provision(input.applicationId, input.platformUserId, input.reason);
   return new StepResponse(context);
 });

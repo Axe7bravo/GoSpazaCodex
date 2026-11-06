@@ -37,3 +37,4 @@ export * from "./merchant-settlements";
 export * from "./driver-finance";
 export * from "./money";
 export * from "./notifications";
+export * from "./operations";
