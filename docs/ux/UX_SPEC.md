@@ -50,6 +50,7 @@ Do not show misleading multi-store sections when only one store is available.
  /checkout/schedule
  /checkout/payment
  /orders
+ /notifications
  /orders/[id]
  /orders/[id]/substitution/[requestId]
  /orders/[id]/delivery
@@ -70,6 +71,7 @@ Do not show misleading multi-store sections when only one store is available.
 ```text
 /merchant
 /merchant/orders
+/merchant/notifications
 /merchant/orders/[id]
 /merchant/orders/[id]/pick
 /merchant/products
@@ -94,6 +96,7 @@ Do not show misleading multi-store sections when only one store is available.
 /driver/deliveries/[id]/verify
 /driver/deliveries/[id]/failed
 /driver/earnings
+/driver/notifications
 /driver/history
 /driver/profile
 ```
@@ -115,10 +118,13 @@ Do not show misleading multi-store sections when only one store is available.
 /admin/commissions
 /admin/settings
 /admin/audit
+/admin/notifications
 /admin/reports
 ```
 
 ## Key customer interactions
+
+M22 notification entries open individual actor-owned inboxes with frozen text, per-item read state and authoritative mark-read. Merchant and driver inboxes use their existing role shells. `/admin/notifications` is a separate grant-protected transport operations view, not a shared message inbox. Provider acceptance does not establish human receipt. Notification links use only the stored internal path; destination APIs retain authorization and dispatch admission. No Accept action appears on an offer notification card.
 
 - Cross-store add must show a deliberate keep-current-cart / clear-and-switch decision.
 - Reorder rebuilds using current products, price and inventory; it does not blindly clone a historical cart.

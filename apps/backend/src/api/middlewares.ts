@@ -1,4 +1,6 @@
 import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
+import { notificationAcceptanceScope } from "../lib/notification-acceptance-scope";
+import { blockNativeNotifications, nativeNotificationMatcher } from "../lib/notification-http-boundary";
 import { settlementAcceptanceScope } from "../lib/settlement-acceptance-scope";
 import { driverFinanceAcceptanceScope } from "../lib/driver-finance-acceptance-scope";
 import { blockNativeDelivery } from "../lib/pickup-http";
@@ -15,6 +17,8 @@ import { actorCors, authOrigin, publicRegistrationActors, rotateSession } from "
 
 export default defineMiddlewares({
   routes: [
+    { matcher: "/hooks/gospaza/resend", method: "POST", bodyParser: { preserveRawBody: true, sizeLimit: "64kb" } },
+    { matcher: nativeNotificationMatcher, middlewares: [blockNativeNotifications] },
     { matcher: /^\/admin\/gospaza\/merchant-payouts(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/admin\/gospaza\/(?:merchant-settlements|settlement-period-policy)(?:\/.*)?$/i, bodyParser: { sizeLimit: "8kb" } },
     { matcher: /^\/admin\/returns(?:\/.*)?$/i, method: ["POST","DELETE"], middlewares: [authOrigin, requireActor("user"), blockNativeDelivery] },
@@ -54,6 +58,7 @@ export default defineMiddlewares({
     { matcher: /^\/admin\/gospaza(?:\/.*)?$/i, middlewares: [authOrigin, requireActor("user")] },
     { matcher: /^\/(?:admin\/gospaza\/(?:merchant-settlements|merchant-payouts|settlement-period-policy)|merchant\/settlements)(?:\/.*)?$/i, middlewares: [settlementAcceptanceScope] },
     { matcher: /^\/(?:admin\/gospaza\/(?:driver-finance|driver-payments|driver-compensation|driver-earnings)|driver\/earnings)(?:\/.*)?$/i, middlewares: [driverFinanceAcceptanceScope] },
+    { matcher: /^\/(?:health\/live|store\/gospaza\/notifications(?:\/.*)?|merchant\/notifications(?:\/.*)?|driver\/(?:notifications|offers|dispatch|availability|deliveries)(?:\/.*)?|admin\/gospaza\/(?:notifications|notification-operations)(?:\/.*)?)$/i, middlewares: [notificationAcceptanceScope] },
   ],
 });
 

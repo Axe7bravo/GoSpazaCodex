@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "test:notification-fixtures": "medusa exec ./src/scripts/verify-notification-fixtures.ts",
+    "test:notification-surfaces": "medusa exec ./src/scripts/verify-notification-surfaces.ts",
+    "acceptance:m22-server": "tsx scripts/m22-acceptance-server.ts",
+    "test:notification-runtime": "medusa exec ./src/scripts/verify-notification-runtime.ts",
+    "test:notification-mappings": "medusa exec ./src/scripts/verify-notification-mappings.ts",
+    "test:notification-foundation": "medusa exec ./src/scripts/verify-notification-foundation.ts",
+    "test:notification-environment": "tsx scripts/notification-foundation-environment.ts",
     "dev": "medusa develop",
     "start": "cd .medusa/server && medusa start",
     "build": "medusa build",

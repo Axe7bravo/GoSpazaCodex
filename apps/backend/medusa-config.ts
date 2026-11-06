@@ -6,6 +6,7 @@ import { AUTH_METHODS } from "./src/lib/auth-config";
 import { privateFileConfig } from "./src/lib/private-file-config";
 import { invitationLifetimeMs } from "./src/modules/marketplace/team-policy";
 import { backendEnv } from "@gospaza/config/env";
+import { notificationModuleConfiguration } from "./src/lib/notification-config";
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd());
 const env = backendEnv(process.env);
@@ -32,6 +33,7 @@ module.exports = defineConfig({
     },
   },
   modules: [
+    ...notificationModuleConfiguration(process.env),
     ...(yoco ? [{ resolve: "@medusajs/medusa/payment", options: {
       providers: [{ resolve: "./src/modules/yoco", id: "yoco", options: { ...yoco } }],
     } }] : []),

@@ -5,7 +5,7 @@ import { authClient } from "../auth-client";
 import Balance from "./balance";
 export default function Account() {
   return <main className="auth-layout customer"><SessionBoundary client={authClient} title="Your account">
-    {(_identity, customer) => <><p>Signed in as <strong>{customer?.email}</strong>.</p><Balance key={customer?.id}/><Link href="/account/addresses">Delivery addresses</Link><p><Link href="/">Browse local stores</Link></p></>}
+    {(_identity, customer) => <><p>Signed in as <strong>{customer?.email}</strong>.</p><Balance key={customer?.id}/><Link href="/account/addresses">Delivery addresses</Link><p><Link href="/notifications">Notifications</Link></p><p><Link href="/">Browse local stores</Link></p></>}
   </SessionBoundary></main>;
 }
 
