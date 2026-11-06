@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
+    "./notifications": "./src/notifications.tsx",
+    "./notifications.css": "./src/notifications.css",
     ".": "./src/index.tsx",
     "./tokens.css": "./src/tokens.css",
     "./auth": "./src/auth.tsx",

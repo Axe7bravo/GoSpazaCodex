@@ -81,6 +81,7 @@ export default function Page() {
   return <main className="driver-workspace driver-mobile">
     <p className="brand">GoSpaza</p><h1>Driver portal</h1>
     <Link href="/driver/earnings">Earnings and payments</Link>
+    <p><Link href="/driver/notifications">Notifications</Link></p>
     <div className="driver-actions"><button disabled={resource.busy} onClick={() => void resource.refresh()}>Refresh profile</button>
       {account !== undefined && <button disabled={resource.busy} onClick={() => void resource.mutate(async () => { await authClient.logout(); denied(); })}>Sign out</button>}</div>
     <DriverFeedback error={resource.error} notice={resource.notice} loading={account === undefined} />

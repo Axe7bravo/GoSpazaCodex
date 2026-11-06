@@ -87,7 +87,7 @@ function LocationProvider({ children }: { children: ReactNode }) {
   }
   return <LocationContext.Provider value={{ location, revision, refresh }}>
     <CartProvider>
-    <nav className="shop-nav" aria-label="Shopping"><Link href="/">Home</Link><Link href="/stores">Stores</Link><Link href="/search">Search</Link><CartNav /><Link href="/account">Account</Link></nav>
+    <nav className="shop-nav" aria-label="Shopping"><Link href="/">Home</Link><Link href="/stores">Stores</Link><Link href="/search">Search</Link><CartNav /><Link href="/notifications">Notifications</Link><Link href="/account">Account</Link></nav>
     <CartFeedback />
     <section className="location-panel" aria-label="Delivery location">
       <div><strong>Your neighbourhood</strong><p>{location ? "Location selected. Availability is checked with each request." : "Choose where you want to shop."}</p></div>
