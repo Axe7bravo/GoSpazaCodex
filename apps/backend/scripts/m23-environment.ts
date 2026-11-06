@@ -1,0 +1,13 @@
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { verifierPath } from "./isolated-verifier";
+import { m23Backend, operationsBackendEnvironment } from "./m23-acceptance-server";
+const args = process.argv.slice(2).filter(value => value !== "--");
+if (args.length !== 2 || args[0] !== "gospaza_m18_c2b_test" || !["fixtures", "api"].includes(args[1] ?? "")) throw Error("Select gospaza_m18_c2b_test and fixtures or api.");
+const { env, summary } = operationsBackendEnvironment();
+console.log("Isolated M23-D:", JSON.stringify(summary));
+const scripts = JSON.parse(readFileSync(resolve(m23Backend, "package.json"), "utf8")).scripts;
+const script = verifierPath([args[1] === "fixtures" ? "test:operations-fixtures" : "test:operations-acceptance"], scripts);
+const child = spawnSync(process.execPath, [require.resolve("@medusajs/cli/cli.js"), "exec", script], { cwd: m23Backend, env, stdio: "inherit" });
+if (child.error) throw Error("Could not launch the isolated M23-D verifier."); process.exitCode = child.status ?? 1;

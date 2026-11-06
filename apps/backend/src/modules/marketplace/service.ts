@@ -62,6 +62,7 @@ import ReviewEvent from "./models/review-event";
 import MerchantInvitation from "./models/merchant-invitation";
 import { capabilitiesFor } from "./team-policy";
 import { MerchantTeamService } from "./team-service";
+import { requirePlatformGrant, legacyCapabilities } from "./platform-capabilities";
 import { editableApplication, reviewTransition, reasonInput, approvalInput } from "./review-policy";
 import type { ReviewAction } from "./review-policy";
 import { applicationFields, validateSubmission, parse } from "./validation";
@@ -194,11 +195,13 @@ export default class MarketplaceService extends MedusaService({ FinancialSettlem
     return this.db<ReviewRow>("merchant_application_review").where({ application_id: id }).orderBy("created_at", "asc").orderBy("id");
   }
   async review(id: string, user: string, action: Exclude<ReviewAction, "approve">, reason = "") {
+    requirePlatformGrant(user, ...legacyCapabilities.merchantWrite);
     if (!user) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform user required.");
     if (action !== "start-review") reason = parse(reasonInput, { reason }).reason;
     await this.db.transaction(async (trx) => {
       const row = await trx<ApplicationRow>(APPS).where({ id }).whereNull("deleted_at").forUpdate().first();
       if (!row) throw missing();
+      requirePlatformGrant(user, ...legacyCapabilities.merchantWrite);
       const to = reviewTransition(row.status, action);
       await this.appendReview(trx, row, { "start-review": "REVIEW_STARTED", "request-information": "INFORMATION_REQUESTED", reject: "REJECTED" }[action], to, user, reason);
       await trx(APPS).where({ id }).update({ status: to, updated_at: new Date() });
@@ -207,11 +210,13 @@ export default class MarketplaceService extends MedusaService({ FinancialSettlem
   // One workflow step owns one atomic custom-module transaction. No native
   // resources are needed in M3, so rollback leaves no external orphan resources.
   async provision(id: string, user: string, reason: string) {
+    requirePlatformGrant(user, ...legacyCapabilities.merchantWrite);
     if (!user) throw new MedusaError(MedusaError.Types.UNAUTHORIZED, "Platform user required.");
     reason = parse(approvalInput, { confirmed: true, reason }).reason;
     return this.db.transaction(async (trx) => {
       const row = await trx<ApplicationRow>(APPS).where({ id }).whereNull("deleted_at").forUpdate().first();
       if (!row) throw missing();
+      requirePlatformGrant(user, ...legacyCapabilities.merchantWrite);
       if (row.status === "APPROVED") {
         const existing = await this.tenantQuery(row.applicant_identity_id, trx);
         if (!existing || existing.source_application_id !== id) throw conflict("Approved application has inconsistent provisioning. Contact support.");

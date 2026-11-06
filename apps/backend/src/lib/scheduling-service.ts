@@ -14,6 +14,8 @@ import { assertDeliverySynchronized, policyInput, slotInput, schedulingDefaults,
   schedulingConflict, resolveDeliveryAssignment } from "../modules/marketplace/scheduling-policy";
 import { commerceLock } from "./commerce";
 import { LocationService } from "./location-service";
+import { platformAccess } from "./platform-access";
+import { requirePlatformGrant, legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 import { ensureShippingProfile, backfillProductProfiles, ensureSouthAfricaGeoZone, ensureLocationFulfillmentProvider } from "./scheduling-native";
 
 type PolicyRow = InferTypeOf<typeof Policy>;
@@ -46,6 +48,7 @@ export class SchedulingService {
     return row;
   }
   private async audit(trx: Knex.Transaction, user: string, target: string, action: string, reason: string, before: unknown, after: unknown) {
+    requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
     await trx("scheduling_event").insert({ id: "schevt_" + randomUUID(), platform_user_id: user,
       target_id: target, action, reason, before_state: before == null ? null : JSON.stringify(before), after_state: JSON.stringify(after) });
   }
@@ -64,8 +67,10 @@ export class SchedulingService {
         revision: o.revision, synced_revision: o.synced_revision, sync_state: o.sync_state, sync_error: o.sync_error })) };
   }
   async savePolicy(storeId: string, value: unknown, user: string, reason: string) {
+    await platformAccess(this.container, user, ...legacyCapabilities.configurationWrite);
     const data = schedulingInput(policyInput, value);
     return this.lock(async () => {
+      requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
       await this.store(storeId);
       await this.db.transaction(async (trx) => {
         const before = await trx<PolicyRow>("store_delivery_policy").where({ merchant_store_id: storeId }).forUpdate().first();
@@ -78,7 +83,9 @@ export class SchedulingService {
     });
   }
   async configureAssignment(storeId: string, assignmentId: string, priority: number, asap: boolean, scheduled: boolean, user: string, reason: string) {
+    await platformAccess(this.container, user, ...legacyCapabilities.configurationWrite);
     return this.lock(async () => {
+      requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
       await this.db.transaction(async (trx) => {
         const before = await trx<Assignment>("merchant_store_service_zone").where({ id: assignmentId, merchant_store_id: storeId }).whereNull("deleted_at").forUpdate().first();
         if (!before) throw missing();
@@ -100,8 +107,10 @@ export class SchedulingService {
     });
   }
   async saveSlot(storeId: string, value: unknown, user: string, reason: string, slotId?: string) {
+    await platformAccess(this.container, user, ...legacyCapabilities.configurationWrite);
     const data = schedulingInput(slotInput, value);
     return this.lock(async () => this.db.transaction(async (trx) => {
+      requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
       const policy = await trx<PolicyRow>("store_delivery_policy").where({ merchant_store_id: storeId }).whereNull("deleted_at").forUpdate().first();
       if (!policy) throw missing();
       const before = slotId ? await trx<SlotRow>("delivery_slot").where({ id: slotId, merchant_store_id: storeId }).whereNull("deleted_at").forUpdate().first() : null;
@@ -145,7 +154,9 @@ export class SchedulingService {
   }
 
   async synchronize(storeId: string, user: string, reason: string) {
+    await platformAccess(this.container, user, ...legacyCapabilities.configurationWrite);
     return this.lock(async () => {
+      requirePlatformGrant(user, ...legacyCapabilities.configurationWrite);
       const store = await this.store(storeId);
       await this.db("store_delivery_policy").insert({ id: "dpolicy_" + randomUUID(), merchant_store_id: storeId, ...schedulingDefaults })
         .onConflict("merchant_store_id").ignore();

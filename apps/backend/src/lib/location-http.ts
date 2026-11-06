@@ -6,6 +6,8 @@ import { z } from "@medusajs/framework/zod";
 import { deleteCustomerAddressesWorkflow } from "@medusajs/medusa/core-flows";
 import { LocationService } from "./location-service";
 import { commerceLock } from "./commerce";
+import { platformAccess } from "./platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 import { addressInput, coordinates, input, zoneInput } from "../modules/marketplace/location-policy";
 import { createAddressLocationWorkflow, updateAddressLocationWorkflow } from "../workflows/save-customer-location";
 
@@ -22,20 +24,22 @@ function reply(res: MedusaResponse, body: unknown, status = 200) {
   res.status(status).json(body);
 }
 export async function listZones(req: MedusaRequest, res: MedusaResponse) {
-  actor(req, "user");
+  await platformAccess(req.scope, actor(req, "user"), ...legacyCapabilities.configurationRead);
   const service = new LocationService(req.scope);
   reply(res, { zones: await service.zones(), stores: await service.stores() });
 }
 export async function getZone(req: MedusaRequest, res: MedusaResponse) {
-  actor(req, "user");
+  await platformAccess(req.scope, actor(req, "user"), ...legacyCapabilities.configurationRead);
   reply(res, await new LocationService(req.scope).zone(param(req)));
 }
 export const saveZone = (create: boolean) => async (req: MedusaRequest, res: MedusaResponse) => {
   const user = actor(req, "user");
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
   reply(res, await new LocationService(req.scope).save(input(zoneInput, req.body), create ? undefined : param(req), user), create ? 201 : 200);
 };
 export const assignStore = (active: boolean) => async (req: MedusaRequest, res: MedusaResponse) => {
   const user = actor(req, "user");
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
   const storeId = active ? input(z.object({ merchant_store_id: z.string().regex(/^mstore_[a-zA-Z0-9-]{1,80}$/) }).strict(), req.body).merchant_store_id : param(req, "storeId");
   reply(res, await new LocationService(req.scope).assign(param(req), storeId, active, user));
 };

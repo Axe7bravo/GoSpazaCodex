@@ -5,6 +5,8 @@ import type { MedusaContainer, IFulfillmentModuleService } from "@medusajs/frame
 import type { Knex } from "@medusajs/framework/mikro-orm/knex";
 import { createLocationFulfillmentSetWorkflow, createServiceZonesWorkflow } from "@medusajs/medusa/core-flows";
 import { commerceLock } from "./commerce";
+import { platformAccess } from "./platform-access";
+import { requirePlatformGrant, legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 import { coordinates, input, zoneInput, geometryService, validateGeometry } from "../modules/marketplace/location-policy";
 import type { Geometry, ZoneInput } from "../modules/marketplace/location-policy";
 
@@ -48,6 +50,7 @@ export class LocationService {
     });
   }
   async save(data: ZoneInput, id?: string, platformUserId?: string) {
+    if (platformUserId) await platformAccess(this.container, platformUserId, ...legacyCapabilities.configurationWrite);
     data = input(zoneInput, data);
     const geometry = validateGeometry(data.geometry);
     const fields = { ...data, geometry: JSON.stringify(geometry), updated_at: new Date() };
@@ -59,6 +62,7 @@ export class LocationService {
     await this.db.transaction(async (trx) => {
       const before = id ? await trx<ZoneRow>("marketplace_service_zone").where({ id }).whereNull("deleted_at").forUpdate().first() : null;
       if (id && !before) throw missing();
+      if (platformUserId) requirePlatformGrant(platformUserId, ...legacyCapabilities.configurationWrite);
       if (id) await trx("marketplace_service_zone").where({ id }).update(fields);
       else await trx("marketplace_service_zone").insert({ id: zoneId, ...fields });
       await this.audit(trx, zoneId, platformUserId, id ? "UPDATED" : "CREATED", before ? snapshot(before) : null, snapshot(data));
@@ -101,7 +105,9 @@ export class LocationService {
     return set.id;
   }
   async assign(zoneId: string, storeId: string, active: boolean, platformUserId?: string) {
+    if (platformUserId) await platformAccess(this.container, platformUserId, ...legacyCapabilities.configurationWrite);
     return commerceLock(this.container, "fulfillment:" + storeId, async () => {
+      if (platformUserId) requirePlatformGrant(platformUserId, ...legacyCapabilities.configurationWrite);
       await this.zone(zoneId);
       const store = await this.db<StoreRow>("merchant_store").where({ id: storeId }).whereNull("deleted_at").first();
       if (!store) throw missing();

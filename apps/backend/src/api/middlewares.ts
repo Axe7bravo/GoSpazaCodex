@@ -1,6 +1,8 @@
 import { driverBoundary, strictDriverRegistration } from "../lib/driver-auth";
 import { notificationAcceptanceScope } from "../lib/notification-acceptance-scope";
 import { blockNativeNotifications, nativeNotificationMatcher } from "../lib/notification-http-boundary";
+import { operationsVerificationScope } from "../lib/operations-verification-scope";
+import { operationsAcceptanceScope } from "../lib/operations-acceptance-scope";
 import { settlementAcceptanceScope } from "../lib/settlement-acceptance-scope";
 import { driverFinanceAcceptanceScope } from "../lib/driver-finance-acceptance-scope";
 import { blockNativeDelivery } from "../lib/pickup-http";
@@ -59,6 +61,8 @@ export default defineMiddlewares({
     { matcher: /^\/(?:admin\/gospaza\/(?:merchant-settlements|merchant-payouts|settlement-period-policy)|merchant\/settlements)(?:\/.*)?$/i, middlewares: [settlementAcceptanceScope] },
     { matcher: /^\/(?:admin\/gospaza\/(?:driver-finance|driver-payments|driver-compensation|driver-earnings)|driver\/earnings)(?:\/.*)?$/i, middlewares: [driverFinanceAcceptanceScope] },
     { matcher: /^\/(?:health\/live|store\/gospaza\/notifications(?:\/.*)?|merchant\/notifications(?:\/.*)?|driver\/(?:notifications|offers|dispatch|availability|deliveries)(?:\/.*)?|admin\/gospaza\/(?:notifications|notification-operations)(?:\/.*)?)$/i, middlewares: [notificationAcceptanceScope] },
+    { matcher: /^\/(?:health\/live|admin\/gospaza\/(?:operations|drivers|service-zones|scheduling|stores)(?:\/.*)?)$/i, middlewares: [operationsVerificationScope] },
+    { matcher: /^\/(?:health\/live|admin\/gospaza\/(?:operations|merchant-applications|drivers|service-zones|scheduling|stores)(?:\/.*)?|driver\/offers(?:\/.*)?)$/i, middlewares: [operationsAcceptanceScope] },
   ],
 });
 

@@ -20,7 +20,7 @@ interface Option { mode: "ASAP" | "SCHEDULED"; medusa_shipping_option_id: string
 // method; PickingService owns physical accounting and M10/native linkage.
 export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Transaction,
   scope: { merchant_id: string; merchant_store_id: string; medusa_order_id: string }, policy: DispatchPolicy,
-  expectedFulfillmentId?: string) {
+  expectedFulfillmentId?: string, existingDocumentOnly = false) {
   if (!await new DriverService(container).activeStore(scope.merchant_store_id, trx)) return dispatchConflict("DISPATCH_STORE_UNAVAILABLE");
   const state = await new PickingService(container).completedForDispatch(trx, scope.merchant_id, scope.merchant_store_id, scope.medusa_order_id);
   const hold = await trx<Reservation>("delivery_reservation").where({ id: state.handoff.reservation_id,
@@ -53,7 +53,7 @@ export async function dispatchReadiness(container: MedusaContainer, trx: Knex.Tr
   const restriction = state.handoff.snapshot.restricted_commerce;
   // Never reinterpret paid goods using today's merchant-editable catalogue.
   if (!restriction) return dispatchConflict("DISPATCH_PRODUCT_EVIDENCE");
-  if (restriction.restricted_content_present) await new RestrictedDeliveryDocument(container).ensure(trx,state.operation.id,state.handoff,state.physical);
+  if (restriction.restricted_content_present) await new RestrictedDeliveryDocument(container).ensure(trx,state.operation.id,state.handoff,state.physical,existingDocumentOnly);
   const config = await trx<DispatchConfigRow>("store_dispatch_configuration").where({ merchant_store_id: scope.merchant_store_id }).forShare().first();
   return { picking: state, operation: state.operation, session: state.session, hold, zone: { id: zone.id, geometry },
     config, notBefore: dispatchNotBefore(option.mode, new Date(slot.start_at), policy),

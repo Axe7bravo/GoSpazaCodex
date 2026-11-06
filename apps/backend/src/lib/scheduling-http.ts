@@ -2,6 +2,8 @@ import type { AuthenticatedMedusaRequest, MedusaRequest, MedusaResponse } from "
 import { MedusaError } from "@medusajs/framework/utils";
 import { z } from "@medusajs/framework/zod";
 import { SchedulingService } from "./scheduling-service";
+import { platformAccess } from "./platform-access";
+import { legacyCapabilities } from "../modules/marketplace/platform-capabilities";
 import { configurationReason, policyInput, schedulingId, schedulingInput, slotInput } from "../modules/marketplace/scheduling-policy";
 
 export function schedulingAdmin(req: MedusaRequest): string {
@@ -16,31 +18,37 @@ function reply(res: MedusaResponse, data: unknown) {
 }
 const reason = z.object({ confirmed: z.literal(true), reason: configurationReason }).strict();
 export async function getScheduling(req: MedusaRequest, res: MedusaResponse) {
-  schedulingAdmin(req);
+  await platformAccess(req.scope, schedulingAdmin(req), ...legacyCapabilities.configurationRead);
   reply(res, await new SchedulingService(req.scope).configuration(param(req, "storeId")));
 }
 export async function configurePolicy(req: MedusaRequest, res: MedusaResponse) {
   const user = schedulingAdmin(req);
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
   const data = schedulingInput(reason.extend({ policy: policyInput }).strict(), req.body);
   reply(res, await new SchedulingService(req.scope).savePolicy(param(req, "storeId"), data.policy, user, data.reason));
 }
 export async function configureAssignment(req: MedusaRequest, res: MedusaResponse) {
   const user = schedulingAdmin(req);
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
   const data = schedulingInput(reason.extend({ priority: z.number().int().min(-2147483648).max(2147483647),
     asap_enabled: z.boolean(), scheduled_enabled: z.boolean() }).strict(), req.body);
   reply(res, await new SchedulingService(req.scope).configureAssignment(param(req, "storeId"), param(req, "assignmentId"),
     data.priority, data.asap_enabled, data.scheduled_enabled, user, data.reason));
 }
 export async function synchronizeScheduling(req: MedusaRequest, res: MedusaResponse) {
-  const user = schedulingAdmin(req), data = schedulingInput(reason, req.body);
+  const user = schedulingAdmin(req);
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
+  const data = schedulingInput(reason, req.body);
   reply(res, await new SchedulingService(req.scope).synchronize(param(req, "storeId"), user, data.reason));
 }
 export async function listSlots(req: MedusaRequest, res: MedusaResponse) {
-  schedulingAdmin(req);
+  await platformAccess(req.scope, schedulingAdmin(req), ...legacyCapabilities.configurationRead);
   reply(res, { slots: await new SchedulingService(req.scope).slots(param(req, "storeId")) });
 }
 export const configureSlot = (create: boolean) => async (req: MedusaRequest, res: MedusaResponse) => {
-  const user = schedulingAdmin(req), data = schedulingInput(reason.extend({ slot: slotInput }).strict(), req.body);
+  const user = schedulingAdmin(req);
+  await platformAccess(req.scope, user, ...legacyCapabilities.configurationWrite);
+  const data = schedulingInput(reason.extend({ slot: slotInput }).strict(), req.body);
   reply(res, { slot: await new SchedulingService(req.scope).saveSlot(param(req, "storeId"), data.slot,
     user, data.reason, create ? undefined : param(req, "slotId")) });
 };
